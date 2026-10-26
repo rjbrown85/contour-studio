@@ -6,13 +6,19 @@ A small vector drawing app for iPad and desktop. A single canvas, warm dark colo
 
 ## Draw
 
-Choose Draw, Line, Box, Oval, or Text. Draw with a finger, Apple Pencil, or mouse. Select an object to move it, drag its corner to resize, or drag the round handle to rotate. Duplicate, Delete, Back, and Front appear only when you select something. Back and Front move an object one step in the stacking order.
+Choose Draw for smooth freehand paths, Pencil for a more direct hand-drawn line, or Line, Curve, Box, Oval, and Text. Draw with a finger, Apple Pencil, or mouse. Select an object to move, resize, rotate, duplicate, or lock it. Curve control points appear when you select a curve. Eraser removes whole vector objects, with undo available. It does not cut a path into pieces.
 
-Ink, width, fill, and opacity apply to the selected object or your next mark. Freehand lines are smooth editable SVG paths. Fill applies to boxes and ovals. Text uses a portable system font, so its appearance may vary slightly in other editors.
+**Colours** opens a colour wheel, brightness slider, common colours, HEX input, and a reusable project palette. Outline and fill can have different colours. Text supports five system font families, size, bold, italic, and letter spacing. **Size & align** offers exact dimensions, rounded box corners, page alignment, and moving an object to another layer.
 
-Use two fingers to pan and pinch to zoom. Pan also works with a single finger. **Pencil only** in the options menu keeps finger touches from drawing. It is an input filter, not hardware palm rejection. Strokes use a fixed width, without pressure sensitivity.
+**Layers** lets you add, rename, reorder, hide, lock, or delete layers. Hidden layers stay in project files and are omitted from SVG/PNG exports. Object and layer locks protect against drawing edits and erasing. Layer deletion is undoable, and layers containing locked objects cannot be deleted until those objects are unlocked.
 
-The canvas has landscape, portrait, square, and wide presets. Undo and redo include object edits and starting or opening a different drawing. The latest 60 changes are kept during the current visit.
+Turn on **Snap shapes** to tidy roughly drawn lines, boxes, and ovals when you lift. **Hold to tidy** in More options does this after a short pause while drawing. Recognition is approximate and conservative. **Keep original stroke** restores a tidied stroke. These options are off by default.
+
+Turn on **Grid** to show a canvas grid. More options offers 20, 40, or 80 unit spacing and **Snap to grid** for new shapes, positioning, resizing, and curve handles. The grid is a drawing guide and never appears in exported artwork.
+
+Use two fingers to pan and pinch to zoom, or choose Pan for a single finger. The visible right-side scroll bar and arrows move up and down when zoomed in. **Fit page** shows the whole artboard, and **Fit width** gives a larger view with vertical scrolling when needed. **Pencil only** keeps finger touches from drawing. It is an input filter, not hardware palm rejection. Strokes use fixed width without pressure sensitivity.
+
+The canvas includes landscape, portrait, square, wide, and 13-inch iPad-shaped presets. Undo and redo include object edits, layer changes, and starting or opening a different drawing. The latest 60 changes are kept during the current visit. Version 1 project files migrate automatically.
 
 ## Take your work to a desktop
 
@@ -21,11 +27,11 @@ The canvas has landscape, portrait, square, and wide presets. Undo and redo incl
 - **Drawing name → Save project** downloads a `.contour.json` file. Move it through Files, iCloud Drive, or another service, then use **Open project** in Contour Studio on the other device.
 - **Download PNG** creates a raster image at up to twice the canvas dimensions, capped at 4096 pixels on its longest side.
 
-Projects and SVGs serve different purposes. This first version opens its own project files, not arbitrary SVG, PDF, or Illustrator files. It does not include node editing, Bézier handles, boolean operations, image tracing, or multi-object selection.
+Projects and SVGs serve different purposes. The app opens its own project files, not arbitrary SVG, PDF, or Illustrator files. It provides two control points for individual curves, but no general path-node editor, boolean operations, image tracing, or multi-object selection.
 
 ## iPad
 
-Open the app in Safari or Chrome. For a standalone view, use Safari's Share menu and Add to Home Screen. The interface adapts to landscape, portrait, and narrow Split View widths. All drawing uses Pointer Events and standard SVG, with no browser-specific file-system API required.
+Open the app in Safari or Chrome. For a standalone view, use Safari's Share menu and Add to Home Screen. The interface uses the available browser height and adapts to landscape, portrait, and narrow Split View widths. Layout checks include 1376 × 1032 and 1032 × 1376, plus reduced heights for browser controls. All drawing uses Pointer Events and standard SVG, with no browser-specific file-system API required.
 
 Browser checks cover simulated touch and pen events, tablet-sized layouts, and desktop pointer input. Physical iPad Safari/Chrome, Apple Pencil, and the native share sheet still need an on-device check. Simulation cannot verify Pencil latency or operating-system gestures.
 
@@ -49,7 +55,7 @@ Open `http://127.0.0.1:4173`. Source files are in `app/`. The drawing model, SVG
 npm test
 ```
 
-For integration checks, start the server and open `http://127.0.0.1:4173/checks/browser.html`. These use a separate test storage key and cover drawing, object transforms, history, pinch cancellation, Pencil-only input, pointer cancellation, text, autosave restoration, SVG/PNG output, and responsive layout. Synthetic pointer capture is stubbed in the test frame. Physical pointer input should also be checked in the app.
+For integration checks, start the server and open `http://127.0.0.1:4173/checks/browser.html`. These use a separate test storage key and cover drawing, object transforms, history, pinch cancellation, Pencil-only input, pointer cancellation, text, autosave restoration, SVG/PNG output, and responsive layout. The expanded checks also cover layers, locks, erasing, curve controls, colours, shape recognition, grids, and side scrolling. Synthetic pointer capture is stubbed in the test frame. Physical pointer input should also be checked in the app.
 
 ## Publish
 

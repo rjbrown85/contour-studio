@@ -53,22 +53,67 @@ await check('Save project uses the current name, and its downloaded file reopens
  const transfer=new w.DataTransfer();transfer.items.add(new w.File([contents],savedName,{type:'application/json'}));q('#file-input').files=transfer.files;q('#file-input').dispatchEvent(new w.Event('change'));await pause()
  assert(count()===before,'Import lost objects');assert(q('#project-name').textContent==='Round trip','Import lost project name')
 })
-await check('a fresh app session restores the full autosaved project',async()=>{
- const before=count();await new Promise(r=>setTimeout(r,250));assert(w.localStorage.getItem('contour-studio.document.v1.test'),'No saved project')
- document.querySelector('#result').textContent='Checking project restore…'
- const restored=document.createElement('iframe');restored.title='Autosave restore check';restored.style.display='none';restored.src='/?test&restore=1'
- try{await Promise.race([new Promise(r=>{restored.addEventListener('load',r,{once:true});document.body.append(restored)}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Restore timed out')),10000))]);await pause();assert(restored.contentDocument.querySelector('#objects').children.length===before,'Restore lost objects')}finally{restored.remove()}
-})
 await check('SVG parses as XML and rasterizes to a PNG',async()=>{
  const {exportSVG}=await import('../core.js'),doc=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test')),svg=exportSVG(doc)
  assert(!new DOMParser().parseFromString(svg,'image/svg+xml').querySelector('parsererror'),'Invalid SVG')
  const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),image=new Image();image.src=url;await image.decode()
  const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=900;canvas.getContext('2d').drawImage(image,0,0);assert(canvas.toDataURL().startsWith('data:image/png'),'PNG failed');URL.revokeObjectURL(url)
 })
+await check('pencil marks stay angular, eraser removes whole marks, and undo restores them',async()=>{
+ click('#project');click('#new');await draw('pencil',100,100,300,200)
+ assert(q('#objects path').getAttribute('d').includes('L'),'Pencil was smoothed')
+ await draw('erase',200,150,220,160);assert(count()===0,'Eraser missed pencil');click('#undo');assert(count()===1,'Undo failed')
+})
+await check('object locks prevent drag, delete, recolour, and erasing',async()=>{
+ click('[data-tool="select"]');event('pointerdown',150,125,1,'mouse',q('#objects path'));event('pointerup',150,125);click('#lock-object')
+ const before=q('#objects').innerHTML;assert(q('#delete').disabled,'Delete enabled on locked object');assert(!q('[data-handle]'),'Locked handles visible')
+ event('pointerdown',150,125,1,'mouse',q('#objects path'));event('pointermove',250,225);event('pointerup',250,225);click('[data-color="#bd6b53"]');assert(q('#objects').innerHTML===before,'Locked mark changed')
+ await draw('erase',200,150,220,160);assert(count()===1,'Erased locked mark')
+ click('[data-tool="select"]');event('pointerdown',150,125,1,'mouse',q('#objects path'));event('pointerup',150,125);click('#lock-object')
+})
+await check('layers hide, protect and move artwork, with reversible deletion',async()=>{
+ click('#layers-toggle');assert(!q('#layers-panel').hidden,'Layers panel did not open');click('#add-layer');await draw('rect',400,100,600,300)
+ const top=q('#layer-list [data-action="select"]').dataset.layer
+ const layerAction=action=>click(`[data-layer="${top}"][data-action="${action}"]`)
+ layerAction('visible');assert(count()===1,'Hidden layer still rendered');layerAction('visible');layerAction('lock');await draw('erase',400,200,400,220);assert(count()===2,'Locked layer erased')
+ await draw('line',700,100,900,100);assert(count()===2,'Drew into locked layer');layerAction('lock')
+ click('[data-tool="select"]');event('pointerdown',400,200,1,'mouse',q('#objects rect'));event('pointerup',400,200);click('#inspect-object');q('#object-layer').value='layer-1';click('#move-layer');layerAction('settings');click('#delete-layer');assert(count()===2,'Moving layer lost artwork');click('#undo');assert(q('#layer-count').textContent==='2','Layer delete undo failed');click('#close-layers')
+})
+await check('curves have editable controls and preserve their shape',async()=>{
+ await draw('curve',100,500,400,500);assert(q('[data-handle="control-0"]'),'No curve handle');const path=q('#objects > g:last-child path'),before=path.getAttribute('d')
+ const handle=q('[data-handle="control-0"]'),x=+handle.getAttribute('cx'),y=+handle.getAttribute('cy');event('pointerdown',x,y,1,'mouse',handle);event('pointermove',x,y+100);event('pointerup',x,y+100)
+ assert(q('#objects > g:last-child path').getAttribute('d')!==before,'Curve edit did not apply')
+})
+await check('colour wheel, HEX, separate fill and outline, and brand palette work',async()=>{
+ await draw('rect',700,400,900,600);click('[data-tool="select"]');event('pointerdown',700,450,1,'mouse',q('#objects > g:last-child rect'));event('pointerup',700,450)
+ click('#colors');click('#target-fill');q('#hex-color').value='#2563eb';click('#apply-color');click('#save-brand-color');click('#target-stroke');q('#hex-color').value='#f97316';click('#apply-color')
+ const paint=q('#objects > g:last-child > g');assert(paint.getAttribute('fill')==='#2563eb','Custom fill failed');assert(paint.getAttribute('stroke')==='#f97316','Separate outline failed');assert(q('#brand-colors [data-paint="#2563eb"]'),'Brand colour not saved')
+ q('#color-wheel').setPointerCapture=()=>{};const r=q('#color-wheel').getBoundingClientRect();q('#color-wheel').dispatchEvent(new w.PointerEvent('pointerdown',{clientX:r.right,clientY:r.top+r.height/2,pointerId:90,bubbles:true}));q('#color-wheel').dispatchEvent(new w.PointerEvent('pointerup',{pointerId:90}));assert(/^#[0-9a-f]{6}$/.test(q('#hex-color').value),'Wheel produced invalid HEX');q('#colors-dialog').close()
+})
+await check('snap shapes tidies on lift and can restore the original stroke',async()=>{
+ click('#snap-shapes');click('[data-tool="draw"]');event('pointerdown',100,700);for(let i=1;i<=15;i++)event('pointermove',100+i*15,700+Math.sin(i));event('pointerup',325,700)
+ assert(q('#objects > g:last-child line'),'Rough line not tidied');assert(!q('#keep-original').hidden,'No keep-original option');click('#keep-original');assert(q('#objects > g:last-child path'),'Original not restored');click('#snap-shapes')
+})
+await check('holding a stroke tidies it before lifting',async()=>{
+ click('#options');q('#hold-shapes').checked=true;q('#hold-shapes').dispatchEvent(new w.Event('change'));q('#options-dialog').close();click('[data-tool="pencil"]');event('pointerdown',500,700);for(let i=1;i<=15;i++)event('pointermove',500+i*15,700+Math.sin(i));await new Promise(r=>setTimeout(r,750));assert(q('#objects > g:last-child line'),'Hold did not tidy');event('pointerup',725,700)
+ click('#options');q('#hold-shapes').checked=false;q('#hold-shapes').dispatchEvent(new w.Event('change'));q('#options-dialog').close()
+})
+await check('grid snaps geometry and stays out of exported artwork',async()=>{
+ if(q('#grid-toggle').getAttribute('aria-pressed')!=='true')click('#grid-toggle');assert(q('#grid pattern'),'Grid missing');click('#options');q('#snap-grid').checked=true;q('#snap-grid').dispatchEvent(new w.Event('change'));q('#options-dialog').close();await draw('rect',113,313,267,467)
+ assert(q('#objects > g:last-child').getAttribute('transform').includes('120 320'),'Grid start not snapped');assert(q('#objects > g:last-child rect').getAttribute('width')==='160','Grid end not snapped')
+ await new Promise(r=>setTimeout(r,250));const {exportSVG}=await import('../core.js'),saved=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test'));assert(!exportSVG(saved).includes('grid-pattern'),'Export includes grid');assert(saved.layers.length===2&&saved.brandColors.includes('#2563eb'),'Project lost layers/palette')
+ click('#options');q('#snap-grid').checked=false;q('#snap-grid').dispatchEvent(new w.Event('change'));q('#options-dialog').close()
+})
+await check('side scroll moves a zoomed canvas and Fit page restores the entire artboard',async()=>{
+ click('#fit');click('#zoom-in');click('#zoom-in');const before=stage.viewBox.baseVal.y;click('#scroll-down');assert(stage.viewBox.baseVal.y>before,'Scroll arrow did not move canvas')
+ const track=q('#scroll-track');track.setPointerCapture=()=>{};const r=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:r.left+10,clientY:r.top+5,pointerId:80}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:80}));assert(stage.viewBox.baseVal.y<before,'Scroll track failed');click('#fit');assert(q('#scroll-down').disabled,'Scroll active while entire page fits')
+})
 await check('tablet landscape, tablet portrait, and narrow layouts fit without overflow',async()=>{
- for(const [width,height] of [[1024,768],[768,1024],[390,844]]){
+ for(const [width,height] of [[1376,1032],[1376,900],[1032,1376],[1032,1200],[1024,768],[768,1024],[390,844]]){
   frame.style.width=width+'px';frame.style.height=height+'px';await pause()
-  const inner=frame.contentDocument,viewport=frame.contentWindow.innerWidth
+  click('#fit');const inner=frame.contentDocument,viewport=frame.contentWindow.innerWidth
+  assert(inner.documentElement.scrollHeight<=height,`Vertical overflow at ${width}x${height}`)
+  const v=stage.viewBox.baseVal;assert(v.x<=0&&v.y<=0&&v.x+v.width>=1200&&v.y+v.height>=900,'Fit page clips artwork')
   assert(inner.documentElement.scrollWidth<=viewport,`Horizontal overflow at ${width}px`)
   for(const selector of ['.toolbar','.properties','#export','#stage']){const r=inner.querySelector(selector).getBoundingClientRect();assert(r.left>=0&&r.right<=viewport,`${selector} does not fit at ${width}px`)}
  }

@@ -27,8 +27,11 @@
     <nav class="toolbar" aria-label="Drawing tools">
       <div class="tools" role="group" aria-label="Tools">
         <button data-tool="draw" aria-pressed="true" title="Draw (B)"><svg viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1 12-12-5-5L4 14Z"/></svg><span>Draw</span></button>
+        <button data-tool="pencil" aria-pressed="false" title="Pencil (P)"><svg viewBox="0 0 24 24"><path d="m4 20 3-7L17 3l4 4L11 17Zm3-7 4 4M4 20l4-1"/></svg><span>Pencil</span></button>
+        <button data-tool="erase" aria-pressed="false" title="Erase whole marks (E)"><svg viewBox="0 0 24 24"><path d="m3 14 10-10 8 8-8 8H9Zm5-5 8 8M13 20h8"/></svg><span>Eraser</span></button>
         <button data-tool="select" aria-pressed="false" title="Select (V)"><svg viewBox="0 0 24 24"><path d="m5 3 15 10-7 1-4 7Z"/></svg><span>Select</span></button>
         <button data-tool="line" aria-pressed="false" title="Line (L)"><svg viewBox="0 0 24 24"><path d="m5 19 14-14"/><circle cx="5" cy="19" r="1"/><circle cx="19" cy="5" r="1"/></svg><span>Line</span></button>
+        <button data-tool="curve" aria-pressed="false" title="Curve (C)"><svg viewBox="0 0 24 24"><path d="M3 19C4 0 20 0 21 19"/><circle cx="3" cy="19" r="1"/><circle cx="21" cy="19" r="1"/></svg><span>Curve</span></button>
         <button data-tool="rect" aria-pressed="false" title="Rectangle (R)"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg><span>Box</span></button>
         <button data-tool="ellipse" aria-pressed="false" title="Oval (O)"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="7"/></svg><span>Oval</span></button>
         <button data-tool="text" aria-pressed="false" title="Text (T)"><svg viewBox="0 0 24 24"><path d="M4 6V4h16v2M12 4v16m-4 0h8"/></svg><span>Text</span></button>
@@ -43,18 +46,20 @@
       <svg id="stage" xmlns="http://www.w3.org/2000/svg" aria-label="Drawing canvas" tabindex="0">
         <defs><filter id="paper-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="12" flood-opacity=".12"/></filter></defs>
         <rect id="paper" width="1200" height="900" fill="white" filter="url(#paper-shadow)"/>
-        <g id="objects"></g><g id="overlay"></g>
+        <g id="grid" pointer-events="none"></g><g id="objects"></g><g id="overlay"></g>
       </svg>
       <div id="empty" aria-hidden="true"><span>Make something.</span><small>Draw with your finger, Pencil, or mouse.</small></div>
       <div id="selection-actions" hidden>
         <button id="edit-text" hidden>Edit text</button>
-        <button id="duplicate">Duplicate</button><button id="backward" title="Move back one layer">Back</button><button id="forward" title="Move forward one layer">Front</button><button id="delete" class="danger">Delete</button>
+        <button id="lock-object">Lock</button><button id="inspect-object">Adjust</button><button id="duplicate">Duplicate</button><button id="backward" title="Move back one layer">Back</button><button id="forward" title="Move forward one layer">Front</button><button id="delete" class="danger">Delete</button>
       </div>
-      <div class="view-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="fit" title="Fit canvas"><span id="zoom-label">Fit</span></button><button id="zoom-in" aria-label="Zoom in">+</button></div>
+      <div class="canvas-scroll" aria-label="Canvas scrolling"><button id="scroll-up" aria-label="Scroll canvas up">▴</button><div id="scroll-track" role="scrollbar" tabindex="0" aria-label="Vertical canvas position" aria-controls="stage" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="500"><span id="scroll-thumb"></span></div><button id="scroll-down" aria-label="Scroll canvas down">▾</button></div>
+      <aside id="layers-panel" hidden aria-label="Layers panel"><div class="panel-heading"><h2>Layers</h2><button id="close-layers" aria-label="Close layers">×</button></div><div id="layer-list"></div><button id="add-layer" class="full">+ Add layer</button><p class="note">Top layers sit in front. Hidden layers stay in your project but are left out of exports.</p></aside>
     </div>
+    <div class="canvas-controls"><div><button id="grid-toggle" aria-pressed="false">Grid</button><button id="snap-shapes" aria-pressed="false" title="Tidy rough lines, boxes, and ovals when you lift">Snap shapes</button><button id="layers-toggle" aria-expanded="false">Layers <span id="layer-count">1</span></button></div><div class="view-controls"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">Fit</span><button id="zoom-in" aria-label="Zoom in">+</button><button id="fit" title="Fit the whole page">Fit page</button><button id="fit-width">Fit width</button></div></div>
     <div class="properties">
       <div class="paint" role="group" aria-label="Colour">
-        <label class="color-label" title="Stroke colour"><input id="color" type="color" value="#343630" aria-label="Stroke colour"><span>Ink</span></label>
+        <label class="color-label" title="Stroke colour"><input id="color" type="color" value="#343630" aria-label="Stroke colour"><span>Ink</span></label><button id="colors" aria-haspopup="dialog" title="Colour wheel, common colours, and brand palette">Colours</button>
         <div id="swatches">
           <button class="swatch" data-color="#343630" style="--swatch:#343630" aria-label="Charcoal" aria-pressed="true"></button>
           <button class="swatch" data-color="#bd6b53" style="--swatch:#bd6b53" aria-label="Clay" aria-pressed="false"></button>
@@ -65,7 +70,7 @@
         </div>
       </div>
       <label class="weight">Width <input id="weight" type="range" min="1" max="24" step="1" value="4"><output id="weight-value">4</output></label>
-      <button id="fill" aria-pressed="false" title="Fill boxes and ovals with the current ink colour">Fill <span id="fill-state">off</span></button>
+      <button id="fill" aria-pressed="false" title="Toggle shape fill. Choose separate fill and outline colours in Colours.">Fill <span id="fill-state">off</span></button>
       <button id="options" aria-label="More drawing options" aria-haspopup="dialog">•••</button>
     </div>
   </section>
@@ -78,7 +83,7 @@
   <div class="two-cols"><button id="save-project" class="primary">Save project</button><button id="open-project">Open project</button></div>
   <p class="note">Save a project to Files or iCloud Drive to continue in Contour Studio on another device. Your current drawing also saves automatically in this browser.</p>
   <div class="divider"></div>
-  <label class="field">New canvas<select id="canvas-size"><option value="1200,900">Landscape · 1200 × 900</option><option value="900,1200">Portrait · 900 × 1200</option><option value="1000,1000">Square · 1000 × 1000</option><option value="1600,900">Wide · 1600 × 900</option></select></label>
+  <label class="field">New canvas<select id="canvas-size"><option value="1032,1376">iPad 13-inch · portrait</option><option value="1376,1032">iPad 13-inch · landscape</option><option value="1200,900" selected>Landscape · 1200 × 900</option><option value="900,1200">Portrait · 900 × 1200</option><option value="1000,1000">Square · 1000 × 1000</option><option value="1600,900">Wide · 1600 × 900</option></select></label>
   <button id="new" class="full">Start new drawing</button>
   <p class="note">You can undo starting a new drawing.</p>
 </dialog>
@@ -95,22 +100,55 @@
   <form method="dialog" class="dialog-heading"><h2>Drawing options</h2><button aria-label="Close drawing options">×</button></form>
   <label class="check"><input id="pencil-only" type="checkbox">Draw with Pencil only</label><p class="note">Finger touches only move the canvas in this mode. A mouse still works.</p>
   <label class="check"><input id="constrain" type="checkbox">Keep shapes square or circular</label>
+  <label class="check"><input id="grid-visible" type="checkbox">Show grid</label>
+  <label class="field">Grid spacing<select id="grid-spacing"><option value="20">Fine · 20 px</option><option value="40" selected>Medium · 40 px</option><option value="80">Wide · 80 px</option></select></label>
+  <label class="check"><input id="snap-grid" type="checkbox">Snap shapes and movement to grid</label>
+  <label class="check"><input id="hold-shapes" type="checkbox">Hold at the end to tidy a shape</label>
+  <label class="field">Curve style<select id="curve-style"><option value="arc">Arc</option><option value="wave">S-curve</option></select></label>
   <label class="field">Opacity <input id="opacity" type="range" min="10" max="100" value="100"><output id="opacity-value">100%</output></label>
+  <p class="note">Grid guides never appear in exports. Shape recognition handles roughly straight lines, boxes, and ovals. Uncertain marks stay freehand.</p>
   <p class="note">Colour, width, fill, and opacity apply to your selection or your next mark.</p>
 </dialog>
 <dialog id="text-dialog">
-  <form id="text-form"><div class="dialog-heading"><h2 id="text-heading">Add text</h2><button type="button" id="cancel-text" aria-label="Cancel text">×</button></div><label class="field">Text<input id="text-content" maxlength="500" placeholder="Write something" autocomplete="off" required></label><button type="submit" class="primary full">Done</button></form>
+  <form id="text-form"><div class="dialog-heading"><h2 id="text-heading">Add text</h2><button type="button" id="cancel-text" aria-label="Cancel text">×</button></div><label class="field">Text<input id="text-content" maxlength="500" placeholder="Write something" autocomplete="off" required></label><div class="two-cols"><label class="field">Typeface<select id="text-font"><option value="sans">Sans · Arial</option><option value="serif">Serif · Georgia</option><option value="humanist">Humanist · Verdana</option><option value="rounded">Soft · Trebuchet</option><option value="mono">Mono · Courier</option></select></label><label class="field">Size<input id="text-size" type="number" min="8" max="400" value="40"></label></div><div class="two-cols"><label class="check"><input id="text-bold" type="checkbox">Bold</label><label class="check"><input id="text-italic" type="checkbox">Italic</label></div><label class="field">Letter spacing<input id="text-tracking" type="number" min="-5" max="40" step="0.5" value="0"></label><button type="submit" class="primary full">Done</button></form>
 </dialog>
 <dialog id="help-dialog">
   <form method="dialog" class="dialog-heading"><h2>A little room to draw</h2><button aria-label="Close help">×</button></form>
+  <p><b>Pencil</b> preserves your hand-drawn line. <b>Eraser</b> removes whole marks as you drag. Locked objects and layers are protected.</p>
+  <p><b>Curve</b> draws an arc or S-curve. Select it and drag the two coloured control points to reshape it.</p>
+  <p><b>Snap shapes</b> tidies rough lines, boxes, and ovals when you lift. You can also enable “Hold at the end” in •••. Use “Keep original stroke” after recognition to restore the hand-drawn version.</p>
+  <p><b>Layers</b> lets you add, reorder, rename, hide, and lock layers. Select any object and use Lock to keep it in place. Unlock it from the same selection controls.</p>
+  <p><b>Colours</b> has a colour wheel, HEX entry, separate fill/outline colours, and a saved brand palette. <b>Adjust</b> gives exact dimensions and alignment to the page.</p>
+  <p><b>Fit page</b> shows the whole drawing. Fit width enlarges it to the available width. The right-hand scroll rail moves up and down when zoomed in. Grid and snapping are in •••.</p>
   <p><b>Draw</b> makes smooth vector lines. Drag to make a line, box, or oval. Tap with the text tool to add a label.</p>
   <p><b>Select</b> an object to move it. Drag its corner to resize or its round handle to rotate. Back and Front change its stacking order.</p>
   <p><b>Two fingers</b> move and zoom the canvas. Pan also works with one finger. Enable Pencil only in ••• to keep fingers from drawing.</p>
   <p><b>Save project</b> under the drawing name keeps an editable copy. Open that file on your desktop to continue. Export SVG for another vector editor.</p>
   <p class="note">No account or cloud sync. This browser stores one current drawing. Save a project file for a durable backup. Safari and Chrome keep separate browser storage.</p>
-  <p class="note">Keyboard: B draw · V select · L line · R box · O oval · T text · H pan · ⌘/Ctrl Z undo · Shift ⌘/Ctrl Z redo · Delete remove · arrows nudge · Escape deselect. Hold Shift to constrain shapes.</p>
+  <p class="note">Keyboard: B draw · P pencil · E eraser · C curve · V select · L line · R box · O oval · T text · H pan · ⌘/Ctrl Z undo · Shift ⌘/Ctrl Z redo · Delete remove · arrows nudge · Escape deselect. Hold Shift to constrain shapes.</p>
   <p class="note">On iPad, you can add this page to your Home Screen from Safari’s Share menu. After the first online visit, the app can open offline once its files have been cached.</p>
 </dialog>
+<dialog id="colors-dialog">
+  <form method="dialog" class="dialog-heading"><h2>Colours</h2><button aria-label="Close colours">×</button></form>
+  <div class="color-targets" role="group" aria-label="Paint target"><button id="target-stroke" aria-pressed="true">Outline / ink</button><button id="target-fill" aria-pressed="false">Fill / text</button></div>
+  <div id="color-wheel" aria-label="Colour wheel" role="img"><span id="wheel-marker"></span></div>
+  <label class="field">Brightness<input id="color-value" type="range" min="0" max="100" value="100"></label>
+  <div class="two-cols"><label class="field">HEX colour<input id="hex-color" value="#343630" maxlength="7" spellcheck="false" autocomplete="off"></label><button id="apply-color" class="primary">Apply colour</button></div>
+  <div id="common-colors" class="palette" aria-label="Common colours"></div>
+  <div class="two-cols"><button id="no-paint">No outline</button><button id="save-brand-color">Save brand colour</button></div>
+  <h3>Brand palette</h3><div id="brand-colors" class="palette" aria-label="Brand colours"></div><p id="brand-empty" class="note">Save a colour here to reuse it. Your palette travels with your project file.</p>
+</dialog>
+<dialog id="inspect-dialog">
+  <form method="dialog" class="dialog-heading"><h2>Adjust object</h2><button aria-label="Close object adjustments">×</button></form>
+  <div class="two-cols"><label class="field">Width<input id="object-width" type="number" min="1" max="100000"></label><label class="field">Height<input id="object-height" type="number" min="1" max="100000"></label><label class="field">Rotation<input id="object-rotation" type="number" min="-360" max="360"></label><label class="field">Corner radius<input id="object-radius" type="number" min="0" max="500"></label></div>
+  <button id="apply-object" class="primary full">Apply dimensions</button>
+  <h3>Align to page</h3><div class="align-controls"><button data-align="left">Left</button><button data-align="center">Centre</button><button data-align="right">Right</button><button data-align="top">Top</button><button data-align="middle">Middle</button><button data-align="bottom">Bottom</button></div>
+  <label class="field">Move to layer<select id="object-layer"></select></label><button id="move-layer" class="full">Move to layer</button>
+</dialog>
+<dialog id="layer-dialog">
+  <form id="layer-form"><div class="dialog-heading"><h2>Layer settings</h2><button type="button" id="cancel-layer" aria-label="Close layer settings">×</button></div><label class="field">Layer name<input id="layer-name" maxlength="80" required></label><button class="primary full" type="submit">Save name</button></form><div class="two-cols"><button id="layer-back">Move back</button><button id="layer-front">Move forward</button></div><button id="delete-layer" class="danger full">Delete layer and its objects</button><p class="note">Layer changes, including deletion, can be undone.</p>
+</dialog>
+<button id="keep-original" hidden>Keep original stroke</button>
 <input type="file" id="file-input" accept=".json,.contour,application/json" hidden>
 <script type="module" src="app.js"></script>
 </body></html>
