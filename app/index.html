@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#1c1b18">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="A quiet space to draw. A minimal vector studio for iPad and desktop.">
+  <title>Contour Studio</title>
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<main>
+  <header>
+    <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 28 28"><path d="M5 21C3 13 10 3 17 5S25 19 18 22 6 16 11 11 22 12 19 17"/></svg></span><h1>Contour <span>Studio</span></h1></div>
+    <div class="file-actions">
+      <button id="project" aria-label="Project options" aria-haspopup="dialog"><span id="project-name">Untitled</span><span class="chevron">⌄</span></button>
+      <button id="theme" aria-label="Switch to light theme" title="Switch theme"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M5 19l1.5-1.5m11-11L19 5"/></svg></button>
+      <button id="export" class="primary" aria-haspopup="dialog">Export <span aria-hidden="true">↗</span></button>
+    </div>
+  </header>
+  <section class="studio" aria-label="Drawing studio">
+    <nav class="toolbar" aria-label="Drawing tools">
+      <div class="tools" role="group" aria-label="Tools">
+        <button data-tool="draw" aria-pressed="true" title="Draw (B)"><svg viewBox="0 0 24 24"><path d="m15 4 5 5M4 20l5-1 12-12-5-5L4 14Z"/></svg><span>Draw</span></button>
+        <button data-tool="select" aria-pressed="false" title="Select (V)"><svg viewBox="0 0 24 24"><path d="m5 3 15 10-7 1-4 7Z"/></svg><span>Select</span></button>
+        <button data-tool="line" aria-pressed="false" title="Line (L)"><svg viewBox="0 0 24 24"><path d="m5 19 14-14"/><circle cx="5" cy="19" r="1"/><circle cx="19" cy="5" r="1"/></svg><span>Line</span></button>
+        <button data-tool="rect" aria-pressed="false" title="Rectangle (R)"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/></svg><span>Box</span></button>
+        <button data-tool="ellipse" aria-pressed="false" title="Oval (O)"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="7"/></svg><span>Oval</span></button>
+        <button data-tool="text" aria-pressed="false" title="Text (T)"><svg viewBox="0 0 24 24"><path d="M4 6V4h16v2M12 4v16m-4 0h8"/></svg><span>Text</span></button>
+        <button data-tool="hand" aria-pressed="false" title="Pan (H)"><svg viewBox="0 0 24 24"><path d="M8 12V5a2 2 0 0 1 4 0v6-8a2 2 0 0 1 4 0v8-5a2 2 0 0 1 4 0v9c0 4-3 7-7 7-3 0-5-2-7-5l-3-4a2 2 0 0 1 3-2l2 2"/></svg><span>Pan</span></button>
+      </div>
+      <div class="history" role="group" aria-label="History">
+        <button id="undo" aria-label="Undo" title="Undo (⌘Z)" disabled><svg viewBox="0 0 24 24"><path d="m8 5-5 5 5 5M3 10h11a6 6 0 0 1 0 12"/></svg></button>
+        <button id="redo" aria-label="Redo" title="Redo (⇧⌘Z)" disabled><svg viewBox="0 0 24 24"><path d="m16 5 5 5-5 5m5-5H10a6 6 0 0 0 0 12"/></svg></button>
+      </div>
+    </nav>
+    <div id="stage-wrap">
+      <svg id="stage" xmlns="http://www.w3.org/2000/svg" aria-label="Drawing canvas" tabindex="0">
+        <defs><filter id="paper-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="5" stdDeviation="12" flood-opacity=".12"/></filter></defs>
+        <rect id="paper" width="1200" height="900" fill="white" filter="url(#paper-shadow)"/>
+        <g id="objects"></g><g id="overlay"></g>
+      </svg>
+      <div id="empty" aria-hidden="true"><span>Make something.</span><small>Draw with your finger, Pencil, or mouse.</small></div>
+      <div id="selection-actions" hidden>
+        <button id="edit-text" hidden>Edit text</button>
+        <button id="duplicate">Duplicate</button><button id="backward" title="Move back one layer">Back</button><button id="forward" title="Move forward one layer">Front</button><button id="delete" class="danger">Delete</button>
+      </div>
+      <div class="view-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="fit" title="Fit canvas"><span id="zoom-label">Fit</span></button><button id="zoom-in" aria-label="Zoom in">+</button></div>
+    </div>
+    <div class="properties">
+      <div class="paint" role="group" aria-label="Colour">
+        <label class="color-label" title="Stroke colour"><input id="color" type="color" value="#343630" aria-label="Stroke colour"><span>Ink</span></label>
+        <div id="swatches">
+          <button class="swatch" data-color="#343630" style="--swatch:#343630" aria-label="Charcoal" aria-pressed="true"></button>
+          <button class="swatch" data-color="#bd6b53" style="--swatch:#bd6b53" aria-label="Clay" aria-pressed="false"></button>
+          <button class="swatch" data-color="#c7a449" style="--swatch:#c7a449" aria-label="Ochre" aria-pressed="false"></button>
+          <button class="swatch" data-color="#668374" style="--swatch:#668374" aria-label="Sage" aria-pressed="false"></button>
+          <button class="swatch" data-color="#637da0" style="--swatch:#637da0" aria-label="Blue" aria-pressed="false"></button>
+          <button class="swatch" data-color="#a28bb3" style="--swatch:#a28bb3" aria-label="Lilac" aria-pressed="false"></button>
+        </div>
+      </div>
+      <label class="weight">Width <input id="weight" type="range" min="1" max="24" step="1" value="4"><output id="weight-value">4</output></label>
+      <button id="fill" aria-pressed="false" title="Fill boxes and ovals with the current ink colour">Fill <span id="fill-state">off</span></button>
+      <button id="options" aria-label="More drawing options" aria-haspopup="dialog">•••</button>
+    </div>
+  </section>
+  <footer><span id="hint">Draw freely. Use two fingers to move and zoom.</span><div><span id="saved" role="status">Saved on this device</span><button id="help" aria-label="Help" aria-haspopup="dialog">?</button></div></footer>
+</main>
+<div id="toast" role="status" hidden></div>
+<dialog id="project-dialog">
+  <form method="dialog" class="dialog-heading"><h2>Your drawing</h2><button aria-label="Close project options">×</button></form>
+  <label class="field">Name<input id="name" maxlength="100" value="Untitled"></label>
+  <div class="two-cols"><button id="save-project" class="primary">Save project</button><button id="open-project">Open project</button></div>
+  <p class="note">Save a project to Files or iCloud Drive to continue in Contour Studio on another device. Your current drawing also saves automatically in this browser.</p>
+  <div class="divider"></div>
+  <label class="field">New canvas<select id="canvas-size"><option value="1200,900">Landscape · 1200 × 900</option><option value="900,1200">Portrait · 900 × 1200</option><option value="1000,1000">Square · 1000 × 1000</option><option value="1600,900">Wide · 1600 × 900</option></select></label>
+  <button id="new" class="full">Start new drawing</button>
+  <p class="note">You can undo starting a new drawing.</p>
+</dialog>
+<dialog id="export-dialog">
+  <form method="dialog" class="dialog-heading"><h2>Take it with you</h2><button aria-label="Close export options">×</button></form>
+  <p class="note">SVG keeps your lines and shapes editable in desktop vector apps, including VectorCraft.</p>
+  <label class="check"><input type="checkbox" id="background">Include a white background</label>
+  <button id="download-svg" class="primary full">Download SVG</button>
+  <button id="share-svg" class="full">Share SVG…</button>
+  <button id="download-png" class="full">Download PNG</button>
+  <p class="note">SVG for editing. PNG for a finished image. Use Save project to reopen all your objects here.</p>
+</dialog>
+<dialog id="options-dialog">
+  <form method="dialog" class="dialog-heading"><h2>Drawing options</h2><button aria-label="Close drawing options">×</button></form>
+  <label class="check"><input id="pencil-only" type="checkbox">Draw with Pencil only</label><p class="note">Finger touches only move the canvas in this mode. A mouse still works.</p>
+  <label class="check"><input id="constrain" type="checkbox">Keep shapes square or circular</label>
+  <label class="field">Opacity <input id="opacity" type="range" min="10" max="100" value="100"><output id="opacity-value">100%</output></label>
+  <p class="note">Colour, width, fill, and opacity apply to your selection or your next mark.</p>
+</dialog>
+<dialog id="text-dialog">
+  <form id="text-form"><div class="dialog-heading"><h2 id="text-heading">Add text</h2><button type="button" id="cancel-text" aria-label="Cancel text">×</button></div><label class="field">Text<input id="text-content" maxlength="500" placeholder="Write something" autocomplete="off" required></label><button type="submit" class="primary full">Done</button></form>
+</dialog>
+<dialog id="help-dialog">
+  <form method="dialog" class="dialog-heading"><h2>A little room to draw</h2><button aria-label="Close help">×</button></form>
+  <p><b>Draw</b> makes smooth vector lines. Drag to make a line, box, or oval. Tap with the text tool to add a label.</p>
+  <p><b>Select</b> an object to move it. Drag its corner to resize or its round handle to rotate. Back and Front change its stacking order.</p>
+  <p><b>Two fingers</b> move and zoom the canvas. Pan also works with one finger. Enable Pencil only in ••• to keep fingers from drawing.</p>
+  <p><b>Save project</b> under the drawing name keeps an editable copy. Open that file on your desktop to continue. Export SVG for another vector editor.</p>
+  <p class="note">No account or cloud sync. This browser stores one current drawing. Save a project file for a durable backup. Safari and Chrome keep separate browser storage.</p>
+  <p class="note">Keyboard: B draw · V select · L line · R box · O oval · T text · H pan · ⌘/Ctrl Z undo · Shift ⌘/Ctrl Z redo · Delete remove · arrows nudge · Escape deselect. Hold Shift to constrain shapes.</p>
+  <p class="note">On iPad, you can add this page to your Home Screen from Safari’s Share menu. After the first online visit, the app can open offline once its files have been cached.</p>
+</dialog>
+<input type="file" id="file-input" accept=".json,.contour,application/json" hidden>
+<script type="module" src="app.js"></script>
+</body></html>

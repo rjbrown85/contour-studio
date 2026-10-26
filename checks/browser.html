@@ -1,0 +1,67 @@
+<!doctype html><meta charset="utf-8"><title>Contour Studio browser checks</title>
+<style>body{font:16px system-ui;background:#f7f7f2;color:#343630;margin:24px}iframe{border:1px solid #bbb;width:1024px;height:768px}li{margin:8px}.pass{color:#287445}.fail{color:#a32f20}</style>
+<h1>Contour Studio browser checks</h1><p id="result">Running…</p><ol id="results"></ol><iframe title="Test canvas" src="/?test"></iframe>
+<script type="module">
+const frame=document.querySelector('iframe'),list=document.querySelector('#results');let passed=0,failed=0
+const pause=()=>new Promise(r=>setTimeout(r,50))
+await new Promise(r=>frame.addEventListener('load',r,{once:true}));await pause()
+const w=frame.contentWindow,d=w.document,stage=d.querySelector('#stage')
+// Synthetic PointerEvents have no active native pointer, so capture is stubbed in this isolated test frame.
+stage.setPointerCapture=()=>{}
+const q=s=>d.querySelector(s),click=s=>q(s).click(),count=()=>q('#objects').children.length
+const assert=(value,message)=>{if(!value)throw new Error(message)}
+async function check(name,fn){try{await fn();list.insertAdjacentHTML('beforeend',`<li class="pass">PASS ${name}</li>`);passed++}catch(e){const li=document.createElement('li');li.className='fail';li.textContent=`FAIL ${name}: ${e.message}`;list.append(li);failed++}}
+function point(x,y){const rect=stage.getBoundingClientRect(),v=stage.viewBox.baseVal;return {clientX:rect.left+(x-v.x)*rect.width/v.width,clientY:rect.top+(y-v.y)*rect.height/v.height}}
+function event(type,x,y,id=1,pointerType='mouse',target=stage){target.dispatchEvent(new w.PointerEvent(type,{...point(x,y),pointerId:id,pointerType,button:0,buttons:type==='pointerup'?0:1,bubbles:true}))}
+async function draw(tool,x1,y1,x2,y2){click(`[data-tool="${tool}"]`);event('pointerdown',x1,y1);event('pointermove',x2,y2);event('pointerup',x2,y2);await pause()}
+click('#project');click('#new')
+await check('box, oval, line, and smooth freehand create editable vector objects',async()=>{
+ await draw('rect',100,100,300,250);await draw('ellipse',400,100,550,250);await draw('line',100,350,350,350);await draw('draw',500,400,650,500)
+ assert(count()===4,'Expected four objects');assert(q('#objects path'),'Missing vector path');assert(q('#objects rect'),'Missing rectangle')
+})
+await check('undo and redo restore the drawing',async()=>{click('#undo');assert(count()===3,'Undo count');click('#redo');assert(count()===4,'Redo count')})
+await check('selection moves and resizes, duplicates, recolours, and deletes',async()=>{
+ click('[data-tool="select"]');let shape=q('#objects rect');event('pointerdown',150,150,1,'mouse',shape);event('pointermove',200,180);event('pointerup',200,180)
+ assert(q('#objects > g').getAttribute('transform').includes('150 130'),'Move did not update position')
+ let handle=q('[data-handle="resize"]');event('pointerdown',350,280,1,'mouse',handle);event('pointermove',450,380);event('pointerup',450,380)
+ assert(q('#objects rect').getAttribute('width')==='300','Resize failed');click('[data-color="#bd6b53"]');assert(q('#objects > g > g').getAttribute('stroke')==='#bd6b53','Colour failed')
+ click('#duplicate');assert(count()===5,'Duplicate failed');click('#delete');assert(count()===4,'Delete failed')
+})
+await check('two-finger pinch cancels a pending stroke and changes zoom',async()=>{
+ click('[data-tool="draw"]');const before=count(),zoom=q('#zoom-label').textContent
+ event('pointerdown',300,300,10,'touch');event('pointermove',320,320,10,'touch');event('pointerdown',600,600,11,'touch');event('pointermove',700,700,11,'touch');event('pointerup',700,700,11,'touch');event('pointerup',320,320,10,'touch')
+ assert(count()===before,'Pinch left an accidental stroke');assert(q('#zoom-label').textContent!==zoom,'Pinch did not zoom');click('#fit')
+})
+await check('Pencil-only mode pans with fingers and draws with a pen',async()=>{
+ click('#options');q('#pencil-only').checked=true;q('#pencil-only').dispatchEvent(new w.Event('change'));q('#options-dialog').close();const before=count()
+ event('pointerdown',300,300,20,'touch');event('pointermove',400,400,20,'touch');event('pointerup',400,400,20,'touch');assert(count()===before,'Finger drew in Pencil-only mode')
+ event('pointerdown',300,300,21,'pen');event('pointermove',400,400,21,'pen');event('pointerup',400,400,21,'pen');assert(count()===before+1,'Pen did not draw');click('#fit')
+})
+await check('cancelled pointer restores the pre-gesture drawing',async()=>{const before=count();event('pointerdown',300,300,22,'pen');event('pointermove',400,500,22,'pen');event('pointercancel',400,500,22,'pen');assert(count()===before,'Cancelled mark was retained')})
+await check('text remains editable and safely renders literal markup',async()=>{
+ click('[data-tool="text"]');event('pointerdown',700,150,1);event('pointerup',700,150,1);q('#text-content').value='<label & text>';q('#text-form').requestSubmit()
+ assert(q('#objects text').textContent==='<label & text>','Text did not render literally');assert(!q('#objects label'),'Text became markup');click('#edit-text');q('#text-content').value='Hello';q('#text-form').requestSubmit();assert(q('#objects text').textContent==='Hello','Text edit failed')
+})
+await check('starting a new canvas is reversible',async()=>{const before=count();click('#project');click('#new');assert(count()===0,'New canvas not empty');click('#undo');assert(count()===before,'Undo did not restore previous drawing')})
+await check('local autosave restores the full project after reload',async()=>{
+ const before=count();await new Promise(r=>setTimeout(r,250));assert(w.localStorage.getItem('contour-studio.document.v1.test'),'No saved project')
+ document.querySelector('#result').textContent='Checking project restore…'
+ await Promise.race([new Promise(r=>{frame.addEventListener('load',r,{once:true});frame.src='/?test&restore=1'}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Reload timed out')),5000))]);await pause();assert(frame.contentDocument.querySelector('#objects').children.length===before,'Reload lost objects')
+})
+await check('SVG parses as XML and rasterizes to a PNG',async()=>{
+ const {exportSVG}=await import('../core.js'),doc=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test')),svg=exportSVG(doc)
+ assert(!new DOMParser().parseFromString(svg,'image/svg+xml').querySelector('parsererror'),'Invalid SVG')
+ const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml'})),image=new Image();image.src=url;await image.decode()
+ const canvas=document.createElement('canvas');canvas.width=1200;canvas.height=900;canvas.getContext('2d').drawImage(image,0,0);assert(canvas.toDataURL().startsWith('data:image/png'),'PNG failed');URL.revokeObjectURL(url)
+})
+await check('tablet landscape, tablet portrait, and narrow layouts fit without overflow',async()=>{
+ for(const [width,height] of [[1024,768],[768,1024],[390,844]]){
+  frame.style.width=width+'px';frame.style.height=height+'px';await pause()
+  const inner=frame.contentDocument,viewport=frame.contentWindow.innerWidth
+  assert(inner.documentElement.scrollWidth<=viewport,`Horizontal overflow at ${width}px`)
+  for(const selector of ['.toolbar','.properties','#export','#stage']){const r=inner.querySelector(selector).getBoundingClientRect();assert(r.left>=0&&r.right<=viewport,`${selector} does not fit at ${width}px`)}
+ }
+ frame.style.width='768px';frame.style.height='1024px'
+})
+document.querySelector('#result').textContent=`${passed} passed, ${failed} failed`
+</script>
