@@ -16,7 +16,7 @@ Turn on **Snap shapes** to tidy roughly drawn lines, boxes, and ovals when you l
 
 Turn on **Grid** to show a canvas grid. More options offers 20, 40, or 80 unit spacing and **Snap to grid** for new shapes, positioning, resizing, and curve handles. The grid is a drawing guide and never appears in exported artwork.
 
-Use two fingers to pan and pinch to zoom, or choose Pan for a single finger. The visible right-side scroll bar and arrows move up and down when zoomed in. **Fit page** shows the whole artboard, and **Fit width** gives a larger view with vertical scrolling when needed. **Pencil only** keeps finger touches from drawing. It is an input filter, not hardware palm rejection. Strokes use fixed width without pressure sensitivity.
+Use two fingers to pan and pinch to zoom, or choose Pan for a single finger. The far-right scroll bar and arrows move the whole app page, independently of the artwork. The title and Export button stay at the top. Short windows scroll instead of clipping controls. **Fit page** shows the whole artboard, and **Fit width** gives a larger view with vertical scrolling when needed. **Detect Apple Pencil automatically** switches fingers to panning after the first pen contact during a visit. Nearby touch contacts are ignored while the pen is active and briefly after lifting, and pen contact cancels a pending finger stroke. Turn automatic detection off to draw with fingers again. **Pencil only** prevents finger drawing from the start. These are input filters, not hardware palm rejection. Strokes use fixed width without pressure sensitivity.
 
 The canvas includes landscape, portrait, square, wide, and 13-inch iPad-shaped presets. Undo and redo include object edits, layer changes, and starting or opening a different drawing. The latest 60 changes are kept during the current visit. Version 1 project files migrate automatically.
 
@@ -31,7 +31,7 @@ Projects and SVGs serve different purposes. The app opens its own project files,
 
 ## iPad
 
-Open the app in Safari or Chrome. For a standalone view, use Safari's Share menu and Add to Home Screen. The interface uses the available browser height and adapts to landscape, portrait, and narrow Split View widths. Layout checks include 1376 × 1032 and 1032 × 1376, plus reduced heights for browser controls. All drawing uses Pointer Events and standard SVG, with no browser-specific file-system API required.
+Open the app in Safari or Chrome. For a standalone view, use Safari's Share menu and Add to Home Screen. The interface respects Home Screen safe areas, keeps the title and Export header visible, and uses the available browser height and adapts to landscape, portrait, and narrow Split View widths. Layout checks include 1376 × 1032 and 1032 × 1376, plus reduced heights for browser controls. All drawing uses Pointer Events and standard SVG, with no browser-specific file-system API required.
 
 Browser checks cover simulated touch and pen events, tablet-sized layouts, and desktop pointer input. Physical iPad Safari/Chrome, Apple Pencil, and the native share sheet still need an on-device check. Simulation cannot verify Pencil latency or operating-system gestures.
 
@@ -55,7 +55,7 @@ Open `http://127.0.0.1:4173`. Source files are in `app/`. The drawing model, SVG
 npm test
 ```
 
-For integration checks, start the server and open `http://127.0.0.1:4173/checks/browser.html`. These use a separate test storage key and cover drawing, object transforms, history, pinch cancellation, Pencil-only input, pointer cancellation, text, autosave restoration, SVG/PNG output, and responsive layout. The expanded checks also cover layers, locks, erasing, curve controls, colours, shape recognition, grids, and side scrolling. Synthetic pointer capture is stubbed in the test frame. Physical pointer input should also be checked in the app.
+For integration checks, start the server and open `http://127.0.0.1:4173/checks/browser.html`. These use a separate test storage key and cover drawing, object transforms, history, pinch cancellation, Pencil-only input, pointer cancellation, text, autosave restoration, SVG/PNG output, and responsive layout. The expanded checks also cover layers, locks, erasing, curve controls, colours, shape recognition, grids, page scrolling, safe areas, and pen-versus-touch handling. Synthetic pointer capture is stubbed in the test frame. Physical pointer input should also be checked in the app.
 
 ## Publish
 

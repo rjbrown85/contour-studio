@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#1c1b18">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="description" content="A quiet space to draw. A minimal vector studio for iPad and desktop.">
   <title>Contour Studio</title>
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="style.css?v=4">
+  <link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
-<main>
+<main id="app-page">
   <header>
     <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 28 28"><path d="M5 21C3 13 10 3 17 5S25 19 18 22 6 16 11 11 22 12 19 17"/></svg></span><h1>Contour <span>Studio</span></h1></div>
     <div class="file-actions">
@@ -53,7 +53,6 @@
         <button id="edit-text" hidden>Edit text</button>
         <button id="lock-object">Lock</button><button id="inspect-object">Adjust</button><button id="duplicate">Duplicate</button><button id="backward" title="Move back one layer">Back</button><button id="forward" title="Move forward one layer">Front</button><button id="delete" class="danger">Delete</button>
       </div>
-      <div class="canvas-scroll" aria-label="Canvas scrolling"><button id="scroll-up" aria-label="Scroll canvas up">▴</button><div id="scroll-track" role="scrollbar" tabindex="0" aria-label="Vertical canvas position" aria-controls="stage" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="500"><span id="scroll-thumb"></span></div><button id="scroll-down" aria-label="Scroll canvas down">▾</button></div>
       <aside id="layers-panel" hidden aria-label="Layers panel"><div class="panel-heading"><h2>Layers</h2><button id="close-layers" aria-label="Close layers">×</button></div><div id="layer-list"></div><button id="add-layer" class="full">+ Add layer</button><p class="note">Top layers sit in front. Hidden layers stay in your project but are left out of exports.</p></aside>
     </div>
     <div class="canvas-controls"><div><button id="grid-toggle" aria-pressed="false">Grid</button><button id="snap-shapes" aria-pressed="false" title="Tidy rough lines, boxes, and ovals when you lift">Snap shapes</button><button id="layers-toggle" aria-expanded="false">Layers <span id="layer-count">1</span></button></div><div class="view-controls"><button id="zoom-out" aria-label="Zoom out">−</button><span id="zoom-label">Fit</span><button id="zoom-in" aria-label="Zoom in">+</button><button id="fit" title="Fit the whole page">Fit page</button><button id="fit-width">Fit width</button></div></div>
@@ -76,6 +75,11 @@
   </section>
   <footer><span id="hint">Draw freely. Use two fingers to move and zoom.</span><div><span id="saved" role="status">Saved on this device</span><button id="help" aria-label="Help" aria-haspopup="dialog">?</button></div></footer>
 </main>
+<nav class="page-scroll" aria-label="App page scrolling">
+  <button id="page-up" aria-label="Scroll app page up" title="Scroll page up">▴</button>
+  <div id="page-track" role="scrollbar" tabindex="0" aria-label="App page position" aria-controls="app-page" aria-orientation="vertical" aria-valuemin="0" aria-valuemax="1000" aria-valuenow="0"><span id="page-thumb"></span></div>
+  <button id="page-down" aria-label="Scroll app page down" title="Scroll page down">▾</button>
+</nav>
 <div id="toast" role="status" hidden></div>
 <dialog id="project-dialog">
   <form method="dialog" class="dialog-heading"><h2>Your drawing</h2><button aria-label="Close project options">×</button></form>
@@ -98,6 +102,7 @@
 </dialog>
 <dialog id="options-dialog">
   <form method="dialog" class="dialog-heading"><h2>Drawing options</h2><button aria-label="Close drawing options">×</button></form>
+  <label class="check"><input id="auto-pen" type="checkbox" checked>Detect Apple Pencil automatically</label><p class="note">Once you use a Pencil, fingers move the canvas for the rest of this visit. Turn this off to draw with fingers again.</p>
   <label class="check"><input id="pencil-only" type="checkbox">Draw with Pencil only</label><p class="note">Finger touches only move the canvas in this mode. A mouse still works.</p>
   <label class="check"><input id="constrain" type="checkbox">Keep shapes square or circular</label>
   <label class="check"><input id="grid-visible" type="checkbox">Show grid</label>
@@ -119,7 +124,7 @@
   <p><b>Snap shapes</b> tidies rough lines, boxes, and ovals when you lift. You can also enable “Hold at the end” in •••. Use “Keep original stroke” after recognition to restore the hand-drawn version.</p>
   <p><b>Layers</b> lets you add, reorder, rename, hide, and lock layers. Select any object and use Lock to keep it in place. Unlock it from the same selection controls.</p>
   <p><b>Colours</b> has a colour wheel, HEX entry, separate fill/outline colours, and a saved brand palette. <b>Adjust</b> gives exact dimensions and alignment to the page.</p>
-  <p><b>Fit page</b> shows the whole drawing. Fit width enlarges it to the available width. The right-hand scroll rail moves up and down when zoomed in. Grid and snapping are in •••.</p>
+  <p><b>Fit page</b> shows the whole drawing. Fit width enlarges it to the available width. The far-right scroll rail moves the app page. The title and Export stay at the top. Use Pan or two fingers to move the artwork. Grid and snapping are in •••.</p>
   <p><b>Draw</b> makes smooth vector lines. Drag to make a line, box, or oval. Tap with the text tool to add a label.</p>
   <p><b>Select</b> an object to move it. Drag its corner to resize or its round handle to rotate. Back and Front change its stacking order.</p>
   <p><b>Two fingers</b> move and zoom the canvas. Pan also works with one finger. Enable Pencil only in ••• to keep fingers from drawing.</p>
@@ -150,5 +155,5 @@
 </dialog>
 <button id="keep-original" hidden>Keep original stroke</button>
 <input type="file" id="file-input" accept=".json,.contour,application/json" hidden>
-<script type="module" src="app.js?v=4"></script>
+<script type="module" src="app.js?v=5"></script>
 </body></html>

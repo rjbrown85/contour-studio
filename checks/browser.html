@@ -104,20 +104,37 @@ await check('grid snaps geometry and stays out of exported artwork',async()=>{
  await new Promise(r=>setTimeout(r,250));const {exportSVG}=await import('../core.js'),saved=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test'));assert(!exportSVG(saved).includes('grid-pattern'),'Export includes grid');assert(saved.layers.length===2&&saved.brandColors.includes('#2563eb'),'Project lost layers/palette')
  click('#options');q('#snap-grid').checked=false;q('#snap-grid').dispatchEvent(new w.Event('change'));q('#options-dialog').close()
 })
-await check('side scroll moves a zoomed canvas and Fit page restores the entire artboard',async()=>{
- click('#fit');click('#zoom-in');click('#zoom-in');const before=stage.viewBox.baseVal.y;click('#scroll-down');assert(stage.viewBox.baseVal.y>before,'Scroll arrow did not move canvas')
- const track=q('#scroll-track');track.setPointerCapture=()=>{};const r=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:r.left+10,clientY:r.top+5,pointerId:80}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:80}));assert(stage.viewBox.baseVal.y<before,'Scroll track failed');click('#fit');assert(q('#scroll-down').disabled,'Scroll active while entire page fits')
+await check('right-side scroll moves the app page while the drawing camera stays fixed',async()=>{
+ frame.style.width='1032px';frame.style.height='500px';await pause();click('#fit');const before=stage.getAttribute('viewBox');assert(!q('.canvas-scroll'),'Canvas rail remains')
+ click('#page-down');await pause();assert(w.scrollY>0,'App page did not scroll');assert(stage.getAttribute('viewBox')===before,'Page scroll moved artwork')
+ const header=q('header').getBoundingClientRect(),exportButton=q('#export').getBoundingClientRect();assert(header.top>=0&&exportButton.top>=0&&exportButton.bottom<500,'Header or Export went offscreen')
+ const track=q('#page-track');track.setPointerCapture=()=>{};const r=track.getBoundingClientRect();track.dispatchEvent(new w.PointerEvent('pointerdown',{clientX:r.left+10,clientY:r.top+1,pointerId:80}));track.dispatchEvent(new w.PointerEvent('pointerup',{pointerId:80}));await pause();assert(w.scrollY===0,'Rail did not scroll back to title')
+ frame.style.height='768px';await pause()
+})
+await check('Pencil detection cancels an accidental finger mark and ignores nearby palm touches',async()=>{
+ q('#pencil-only').checked=false;q('#pencil-only').dispatchEvent(new w.Event('change'));q('#auto-pen').checked=false;q('#auto-pen').dispatchEvent(new w.Event('change'));await new Promise(r=>setTimeout(r,750));click('[data-tool="pencil"]');const before=count()
+ event('pointerdown',100,100,41,'touch');event('pointermove',200,200,41,'touch');assert(count()===before+1,'Test finger mark not started')
+ q('#auto-pen').checked=true;q('#auto-pen').dispatchEvent(new w.Event('change'));event('pointerdown',300,100,42,'pen');event('pointermove',400,200,42,'pen');event('pointerdown',600,600,43,'touch');event('pointermove',700,700,43,'touch');event('pointerup',700,700,43,'touch');event('pointerup',450,250,42,'pen');event('pointerup',200,200,41,'touch');assert(count()===before+1,'Pencil left an accidental finger mark')
+ const path=q('#objects > g:last-child path').getAttribute('d');assert(path.endsWith('150 150'),'Pencil release point missing')
+ event('pointerdown',600,600,44,'touch');event('pointermove',700,700,44,'touch');event('pointerup',700,700,44,'touch');assert(count()===before+1,'Trailing palm added a mark')
+ await new Promise(r=>setTimeout(r,750));event('pointerdown',600,600,45,'touch');event('pointermove',650,650,45,'touch');event('pointerup',650,650,45,'touch');assert(count()===before+1,'Finger drew after Pencil detection')
+})
+await check('a brief Pencil stroke includes its release position without a move event',async()=>{
+ click('[data-tool="pencil"]');const before=count();event('pointerdown',200,300,46,'pen');event('pointerup',250,350,46,'pen');assert(count()===before+1,'Brief stroke missing');assert(q('#objects > g:last-child path').getAttribute('d').endsWith('50 50'),'Brief stroke endpoint missing')
 })
 await check('tablet landscape, tablet portrait, and narrow layouts fit without overflow',async()=>{
  for(const [width,height] of [[1376,1032],[1376,900],[1032,1376],[1032,1200],[1024,768],[768,1024],[390,844]]){
   frame.style.width=width+'px';frame.style.height=height+'px';await pause()
   click('#fit');const inner=frame.contentDocument,viewport=frame.contentWindow.innerWidth
-  assert(inner.documentElement.scrollHeight<=height,`Vertical overflow at ${width}x${height}`)
+  w.scrollTo(0,0);await pause();const title=q('h1').getBoundingClientRect(),exportButton=q('#export').getBoundingClientRect();assert(title.top>=0&&exportButton.top>=0&&exportButton.bottom<height,'Title or Export is clipped')
   const v=stage.viewBox.baseVal;assert(v.x<=0&&v.y<=0&&v.x+v.width>=1200&&v.y+v.height>=900,'Fit page clips artwork')
   assert(inner.documentElement.scrollWidth<=viewport,`Horizontal overflow at ${width}px`)
   for(const selector of ['.toolbar','.properties','#export','#stage']){const r=inner.querySelector(selector).getBoundingClientRect();assert(r.left>=0&&r.right<=viewport,`${selector} does not fit at ${width}px`)}
  }
  frame.style.width='768px';frame.style.height='1024px'
+})
+await check('standalone safe areas keep the title and Export clear of the status bar',async()=>{
+ frame.style.width='1376px';frame.style.height='900px';d.documentElement.style.setProperty('--safe-top','32px');d.documentElement.style.setProperty('--safe-bottom','24px');await pause();w.scrollTo(0,0);await pause();assert(q('h1').getBoundingClientRect().top>=32,'Title overlaps status bar');assert(q('#export').getBoundingClientRect().top>=32,'Export overlaps status bar');d.documentElement.style.removeProperty('--safe-top');d.documentElement.style.removeProperty('--safe-bottom')
 })
 document.querySelector('#result').textContent=`${passed} passed, ${failed} failed`
 </script>

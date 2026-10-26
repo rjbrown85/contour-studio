@@ -1,4 +1,4 @@
-import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=4'
+import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=5'
 
 const $=s=>document.querySelector(s)
 const stage=$('#stage'), wrap=$('#stage-wrap'), art=$('#objects'), overlay=$('#overlay')
@@ -7,10 +7,11 @@ const STORAGE='contour-studio.document.v1'+(testMode?'.test':''), PREFS='contour
 let doc=blank(), startupError=''
 try {const saved=localStorage.getItem(STORAGE);if(saved)doc=validateProject(JSON.parse(saved))}
 catch {startupError='The saved drawing could not be opened. Save a project file regularly for a backup.'}
-let prefs={theme:'dark',pencilOnly:false,grid:false,gridSpacing:40,snapGrid:false,snapShapes:false,holdShapes:false,curveStyle:'arc'}
+let prefs={theme:'dark',pencilOnly:false,autoPen:true,grid:false,gridSpacing:40,snapGrid:false,snapShapes:false,holdShapes:false,curveStyle:'arc'}
 try{prefs={...prefs,...JSON.parse(localStorage.getItem(PREFS)||'{}')}}catch{}
 document.documentElement.dataset.theme=prefs.theme==='light'?'light':'dark'
 let history=new History(doc),selected=null,tool='draw',ink='#343630',width=4,filled=false,opacity=1
+let penDetected=false,lastPenTime=-Infinity
 let autoFit=true,fillInk='#668374',paintTarget='stroke',wheelHSV=hexToHSV(ink),holdTimer,recognizedOriginal=null,editingLayer=null
 let camera={x:0,y:0,z:1},gesture=null,pointers=new Map(),pinch=null,waitForLift=false,raf=0,saveTimer,toastTimer,textTarget=null
 const hints={pencil:'Pencil keeps your hand-drawn line. Snap shapes can tidy it.',erase:'Drag over marks to erase whole objects. Locked artwork is protected.',curve:'Drag between endpoints. Select the curve to adjust its control points.',draw:'Draw freely. Use two fingers to move and zoom.',select:'Tap an object. Drag to move, use the corner to resize.',line:'Drag to draw a line.',rect:'Drag to draw a box.',ellipse:'Drag to draw an oval.',text:'Tap the canvas to add text.',hand:'Drag to move the canvas. Pinch to zoom.'}
@@ -57,7 +58,7 @@ function updateCamera(){
 
   stage.setAttribute('viewBox',`${camera.x} ${camera.y} ${wrap.clientWidth/camera.z} ${wrap.clientHeight/camera.z}`)
   $('#zoom-label').textContent=`${Math.round(camera.z*100)}%`
-  syncScroll();selectionOverlay()
+  selectionOverlay()
 }
 function fit(){autoFit=true;const pad=window.innerWidth<600?30:52;camera.z=Math.max(.02,Math.min((wrap.clientWidth-pad*2)/doc.width,(wrap.clientHeight-48)/doc.height));camera.x=(doc.width-wrap.clientWidth/camera.z)/2;camera.y=(doc.height-wrap.clientHeight/camera.z)/2;updateCamera();render()}
 function fitWidth(){autoFit=false;camera.z=Math.max(.02,(wrap.clientWidth-104)/doc.width);camera.x=(doc.width-wrap.clientWidth/camera.z)/2;camera.y=-24/camera.z;updateCamera();render()}
@@ -105,14 +106,15 @@ function startPinch(){
 }
 stage.addEventListener('pointerdown',e=>{
   if(e.button!==0)return
-  if(e.pointerType==='touch'&&[...pointers.values()].some(p=>p.type==='pen'))return
+  if(e.pointerType==='touch'&&([...pointers.values()].some(p=>p.type==='pen')||performance.now()-lastPenTime<700))return
+  if(e.pointerType==='pen'){lastPenTime=performance.now();if(!penDetected){penDetected=true;if(prefs.autoPen)toast('Pencil detected. Fingers now move the canvas. Change this in Drawing options.')}}
   e.preventDefault();stage.focus({preventScroll:true})
   const sp=screen(e);pointers.set(e.pointerId,{...sp,type:e.pointerType});stage.setPointerCapture(e.pointerId)
   if(e.pointerType==='pen'&&[...pointers.values()].some(p=>p.type==='touch')){cancelGesture();for(const [id,p]of pointers)if(p.type==='touch')pointers.delete(id);waitForLift=false}
   if(e.pointerType==='touch'&&[...pointers.values()].filter(p=>p.type==='touch').length===2){startPinch();return}
   if(pinch||waitForLift||gesture)return
   let p=world(sp);const id=e.target.closest('[data-object]')?.dataset.object,handle=e.target.dataset.handle
-  if(tool==='hand'||(prefs.pencilOnly&&e.pointerType==='touch')){autoFit=false;gesture={kind:'pan',pointer:e.pointerId,screen:sp,camera:{...camera}};return}
+  if(tool==='hand'||((prefs.pencilOnly||(prefs.autoPen&&penDetected))&&e.pointerType==='touch')){autoFit=false;gesture={kind:'pan',pointer:e.pointerId,screen:sp,camera:{...camera}};return}
   if(tool==='select'){
     const o=getSelected()
     if(handle&&o&&editable(doc,o)){gesture={kind:handle,pointer:e.pointerId,before:clone(doc),original:clone(o),start:p};return}
@@ -136,8 +138,9 @@ stage.addEventListener('pointerdown',e=>{
   gesture={kind:'draw',pointer:e.pointerId,before,object:o.id,start:p,points:[p],tool}
   render()
 })
-stage.addEventListener('pointermove',e=>{
+function movePointer(e){
   if(!pointers.has(e.pointerId))return
+  if(e.pointerType==='pen')lastPenTime=performance.now()
   const sp=screen(e);pointers.set(e.pointerId,{...sp,type:e.pointerType})
   if(pinch){
     const pts=[...pointers.values()].filter(p=>p.type==='touch')
@@ -182,9 +185,12 @@ stage.addEventListener('pointermove',e=>{
     if(g.kind==='rotate'){const center=toWorld({x:g.original.w/2,y:g.original.h/2},g.original);let angle=Math.atan2(p.y-center.y,p.x-center.x)*180/Math.PI+90;if(e.shiftKey)angle=Math.round(angle/15)*15;Object.assign(o,rotateAroundCenter(g.original,angle))}
   }
   requestRender()
-})
+}
+stage.addEventListener('pointermove',movePointer)
 function endPointer(e,cancel=false){
   if(!pointers.has(e.pointerId))return
+  if(e.pointerType==='pen')lastPenTime=performance.now()
+  if(!cancel&&gesture?.pointer===e.pointerId&&gesture.kind==='draw'&&!gesture.recognized)movePointer(e)
   pointers.delete(e.pointerId)
   if(pinch){pinch=null;waitForLift=pointers.size>0;return}
   if(waitForLift){if(!pointers.size)waitForLift=false;return}
@@ -203,7 +209,7 @@ stage.addEventListener('pointerup',e=>endPointer(e))
 stage.addEventListener('pointercancel',e=>endPointer(e,true))
 stage.addEventListener('lostpointercapture',e=>endPointer(e,true))
 stage.addEventListener('contextmenu',e=>e.preventDefault())
-stage.addEventListener('wheel',e=>{e.preventDefault();if(gesture)return;if(e.ctrlKey||e.metaKey)zoom(Math.exp(-e.deltaY*.008),screen(e));else{autoFit=false;camera.x+=e.deltaX/camera.z;camera.y+=e.deltaY/camera.z;updateCamera()}},{passive:false})
+stage.addEventListener('wheel',e=>{if(gesture){e.preventDefault();return}if(e.ctrlKey||e.metaKey){e.preventDefault();zoom(Math.exp(-e.deltaY*.008),screen(e))}else if(tool==='hand'){e.preventDefault();autoFit=false;camera.x+=e.deltaX/camera.z;camera.y+=e.deltaY/camera.z;updateCamera()}},{passive:false})
 stage.addEventListener('dblclick',e=>{const id=e.target.closest('[data-object]')?.dataset.object,o=doc.objects.find(o=>o.id===id);if(tool==='select'&&o?.type==='text'&&editable(doc,o)){choose(id);openText(null,o)}})
 
 function openText(position,object){
@@ -242,6 +248,8 @@ $('#backward').onclick=()=>reorder(-1);$('#forward').onclick=()=>reorder(1)
 $('#edit-text').onclick=()=>openText(null,getSelected())
 $('#undo').onclick=undo;$('#redo').onclick=redo
 $('#zoom-in').onclick=()=>zoom(1.25);$('#zoom-out').onclick=()=>zoom(.8);$('#fit').onclick=fit;$('#fit-width').onclick=fitWidth
+$('#auto-pen').checked=prefs.autoPen!==false
+$('#auto-pen').onchange=e=>{prefs.autoPen=e.target.checked;preference()}
 $('#pencil-only').checked=!!prefs.pencilOnly
 $('#pencil-only').onchange=e=>{prefs.pencilOnly=e.target.checked;preference()}
 function themeLabel(){$('#theme').setAttribute('aria-label',`Switch to ${document.documentElement.dataset.theme==='dark'?'light':'dark'} theme`)}
@@ -315,13 +323,6 @@ function renderGrid(){
   const space=[20,40,80].includes(+prefs.gridSpacing)?+prefs.gridSpacing:40
   $('#grid').innerHTML=prefs.grid?`<defs><pattern id="grid-pattern" width="${space}" height="${space}" patternUnits="userSpaceOnUse"><path d="M${space} 0H0V${space}" fill="none" stroke="#a5ada8" stroke-opacity=".4" stroke-width="${.7/camera.z}"/></pattern></defs><rect width="${doc.width}" height="${doc.height}" fill="url(#grid-pattern)"/>`:''
 }
-function syncScroll(){
-  const track=$('#scroll-track'),thumb=$('#scroll-thumb'),range=cameraRange(doc.height,wrap.clientHeight,camera.z,36),available=range.max-range.min
-  const ratio=clamp(wrap.clientHeight/(camera.z*doc.height),.04,1),height=Math.max(36,track.clientHeight*ratio),travel=Math.max(0,track.clientHeight-height),fraction=available?(camera.y-range.min)/available:.5
-  thumb.style.height=`${Math.min(track.clientHeight,height)}px`;thumb.style.top=`${fraction*travel}px`
-  track.setAttribute('aria-valuenow',String(Math.round(fraction*1000)));track.setAttribute('aria-disabled',String(!available));$('#scroll-up').disabled=!available;$('#scroll-down').disabled=!available
-}
-function scrollCanvas(direction){autoFit=false;camera.y+=direction*wrap.clientHeight*.2/camera.z;updateCamera()}
 function curveFromEndpoints(a,b,style){const angle=Math.atan2(b.y-a.y,b.x-a.x),w=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),h=Math.max(40,w*.5);return {id:uid(),type:'curve',x:a.x+Math.sin(angle)*h/2,y:a.y-Math.cos(angle)*h/2,w,h,rotation:angle*180/Math.PI,...style,fill:'none',controls:prefs.curveStyle==='wave'?[[.25,-.4],[.75,1.4]]:[[.25,-.15],[.75,-.15]]}}
 function eraseAt(p){
   const o=visibleObjects(doc).reverse().find(o=>editable(doc,o)&&hitTest(o,p,8/camera.z))
@@ -369,12 +370,6 @@ function palette(){
 }
 function initializeExtras(){
   if(![20,40,80].includes(+prefs.gridSpacing))prefs.gridSpacing=40
-  const scrollTrack=$('#scroll-track');let scrolling=false,grabOffset=0
-  const moveScroll=e=>{if(scrollTrack.getAttribute('aria-disabled')==='true')return;const box=scrollTrack.getBoundingClientRect(),thumb=$('#scroll-thumb'),height=thumb.getBoundingClientRect().height,travel=box.height-height,range=cameraRange(doc.height,wrap.clientHeight,camera.z,36);autoFit=false;camera.y=range.min+clamp((e.clientY-box.top-grabOffset)/Math.max(1,travel),0,1)*(range.max-range.min);updateCamera()}
-  scrollTrack.onpointerdown=e=>{e.preventDefault();const t=$('#scroll-thumb').getBoundingClientRect();grabOffset=e.clientY>=t.top&&e.clientY<=t.bottom?e.clientY-t.top:t.height/2;scrolling=true;scrollTrack.setPointerCapture(e.pointerId);moveScroll(e)}
-  scrollTrack.onpointermove=e=>{if(scrolling)moveScroll(e)};scrollTrack.onpointerup=scrollTrack.onpointercancel=()=>{scrolling=false}
-  scrollTrack.onkeydown=e=>{if(['ArrowDown','ArrowUp','PageDown','PageUp'].includes(e.key)){e.preventDefault();e.stopPropagation();scrollCanvas(e.key.endsWith('Down')?1:-1)}}
-  $('#scroll-up').onclick=()=>scrollCanvas(-1);$('#scroll-down').onclick=()=>scrollCanvas(1)
   $('#grid-toggle').onclick=()=>{prefs.grid=!prefs.grid;syncExtras();preference();renderGrid()}
   $('#snap-shapes').onclick=()=>{prefs.snapShapes=!prefs.snapShapes;syncExtras();preference()}
   $('#grid-visible').onchange=e=>{prefs.grid=e.target.checked;syncExtras();preference();renderGrid()}
@@ -430,6 +425,25 @@ function initializeExtras(){
 }
 function syncColorTarget(){$('#target-stroke').setAttribute('aria-pressed',String(paintTarget==='stroke'));$('#target-fill').setAttribute('aria-pressed',String(paintTarget==='fill'));$('#no-paint').textContent=paintTarget==='stroke'?'No outline':'No fill'}
 function syncExtras(){$('#grid-toggle').setAttribute('aria-pressed',String(!!prefs.grid));$('#snap-shapes').setAttribute('aria-pressed',String(!!prefs.snapShapes));$('#grid-visible').checked=!!prefs.grid;$('#grid-spacing').value=prefs.gridSpacing;$('#snap-grid').checked=!!prefs.snapGrid;$('#hold-shapes').checked=!!prefs.holdShapes;$('#curve-style').value=prefs.curveStyle}
-initializeExtras();render();syncStyle();fit()
+function initializePageScroll(){
+  const track=$('#page-track'),thumb=$('#page-thumb')
+  const range=()=>Math.max(0,document.documentElement.scrollHeight-window.innerHeight)
+  function sync(){
+    const max=range(),height=track.clientHeight,thumbHeight=Math.min(height,Math.max(32,height*window.innerHeight/document.documentElement.scrollHeight))
+    thumb.style.height=`${thumbHeight}px`;thumb.style.top=`${max?clamp(window.scrollY/max,0,1)*(height-thumbHeight):0}px`
+    track.setAttribute('aria-valuenow',String(max?Math.round(window.scrollY/max*1000):0));track.setAttribute('aria-disabled',String(!max))
+    $('#page-up').disabled=window.scrollY<=0;$('#page-down').disabled=window.scrollY>=max
+  }
+  let dragging=false,offset=0
+  function move(e){if(!range())return;const box=track.getBoundingClientRect(),travel=box.height-thumb.getBoundingClientRect().height;window.scrollTo(0,clamp((e.clientY-box.top-offset)/Math.max(1,travel),0,1)*range());sync()}
+  track.onpointerdown=e=>{e.preventDefault();const r=thumb.getBoundingClientRect();offset=e.clientY>=r.top&&e.clientY<=r.bottom?e.clientY-r.top:r.height/2;dragging=true;track.setPointerCapture(e.pointerId);move(e)}
+  track.onpointermove=e=>{if(dragging)move(e)};track.onpointerup=track.onpointercancel=()=>dragging=false
+  const step=direction=>{window.scrollBy(0,direction*Math.max(100,window.innerHeight*.3));sync()}
+  $('#page-up').onclick=()=>step(-1);$('#page-down').onclick=()=>step(1)
+  track.onkeydown=e=>{if(['ArrowUp','ArrowDown','PageUp','PageDown','Home','End'].includes(e.key)){e.preventDefault();e.stopPropagation();if(e.key==='Home')window.scrollTo(0,0);else if(e.key==='End')window.scrollTo(0,range());else step(e.key.endsWith('Down')?1:-1);sync()}}
+  window.addEventListener('scroll',sync,{passive:true});window.addEventListener('resize',sync);window.visualViewport?.addEventListener('resize',sync)
+  new ResizeObserver(sync).observe(document.querySelector('main'));sync()
+}
+initializeExtras();render();syncStyle();fit();initializePageScroll()
 if(startupError)toast(startupError)
 if('serviceWorker'in navigator&&location.hostname!=='127.0.0.1'&&location.hostname!=='localhost')navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{})
