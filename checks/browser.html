@@ -151,6 +151,34 @@ await check('autosave waits for a complete stroke rather than saving a partial m
  event('pointerdown',500,300,111,'pen');event('pointermove',550,350,111,'pen');await new Promise(r=>setTimeout(r,300));assert(w.localStorage.getItem('contour-studio.document.v1.test')===savedBefore,'Saved a partial drawing')
  event('pointerup',600,400,111,'pen');await new Promise(r=>setTimeout(r,250));const saved=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test'));assert(Math.abs(saved.objects.at(-1).w-100)<.001&&Math.abs(saved.objects.at(-1).h-100)<.001,'Completed stroke not saved')
 })
+async function lasso(points,id=200){click('[data-tool="select"]');click('#new-lasso');event('pointerdown',...points[0],id,'pen');for(const p of points.slice(1))event('pointermove',...p,id,'pen');event('pointerup',...points.at(-1),id,'pen');await pause()}
+function position(index){const t=q('#objects').children[index].transform.baseVal.getItem(0).matrix;return {x:t.e,y:t.f}}
+await check('Pencil lasso selects enclosed artwork while excluding locked and hidden objects',async()=>{
+ click('#project');click('#new');await draw('rect',100,100,200,200);await draw('rect',300,100,400,200);await draw('rect',500,100,600,200)
+ click('[data-tool="select"]');event('pointerdown',550,150,190,'pen');event('pointerup',550,150,190,'pen');click('#lock-object')
+ click('#layers-toggle');click('#add-layer');await draw('ellipse',700,100,800,200);const top=q('#layer-list [data-action="select"]').dataset.layer;click(`[data-layer="${top}"][data-action="visible"]`);click('[data-layer="layer-1"][data-action="select"]');click('#close-layers')
+ await lasso([[60,60],[850,60],[850,250],[60,250],[60,60]])
+ assert(q('#selection-count').textContent==='2 selected','Lasso selected the wrong objects');assert(q('[data-selection-drag]'),'No draggable selection box');assert(count()===3,'Lasso modified the artwork')
+})
+await check('Pencil moves the entire selection from empty space inside its box and undo restores both',async()=>{
+ const before=q('#objects').children[0],layers=q('#layer-list').firstElementChild
+ event('pointerdown',250,150,201,'pen');event('pointermove',300,250,201,'pen');await new Promise(r=>w.requestAnimationFrame(()=>w.requestAnimationFrame(r)))
+ assert(q('#objects').children[0]===before,'Move rebuilt the artwork');assert(q('#layer-list').firstElementChild===layers,'Move rebuilt layers')
+ event('pointerup',310,260,201,'pen');assert(Math.abs(position(0).x-160)<.01&&Math.abs(position(1).x-360)<.01,'Group did not preserve spacing');assert(Math.abs(position(0).y-210)<.01,'Release position lost');assert(position(2).x===500&&position(2).y===100,'Locked artwork moved')
+ click('#undo');assert(position(0).x===100&&position(1).x===300,'Undo did not restore the group');click('#redo');assert(Math.abs(position(0).x-160)<.01,'Redo did not restore movement')
+})
+await check('cancelled group movement restores all selected positions',async()=>{
+ await lasso([[120,170],[460,170],[460,350],[120,350],[120,170]],202);event('pointerdown',280,260,203,'pen');event('pointermove',600,600,203,'pen');event('pointercancel',600,600,203,'pen')
+ assert(Math.abs(position(0).x-160)<.01&&Math.abs(position(1).x-360)<.01,'Cancel moved part of group');assert(q('#selection-count').textContent==='2 selected','Cancel lost selection')
+})
+await check('group duplicate, delete, locking and deselection operate on the whole selection',async()=>{
+ const before=count();click('#duplicate');assert(count()===before+2,'Group duplicate failed');assert(q('#selection-count').textContent==='2 selected','Copies not selected');click('#delete');assert(count()===before,'Group delete failed');click('#undo');assert(count()===before+2,'Undo group delete failed');click('#redo')
+ await lasso([[120,170],[460,170],[460,350],[120,350],[120,170]],204);click('#lock-object');assert(q('#delete').disabled&&q('#duplicate').disabled,'Locked selection still editable');assert(q('#lock-object').textContent==='Unlock','No group unlock');click('#lock-object');click('#clear-selection');assert(q('#selection-actions').hidden,'Deselect left selection controls')
+})
+await check('Pencil can select a thin line near its edge and drag from inside a hollow box',async()=>{
+ await draw('line',100,500,350,500);click('[data-tool="select"]');event('pointerdown',200,510,205,'pen');event('pointerup',200,510,205,'pen');assert(!q('#selection-actions').hidden,'Near-line Pencil tap missed');click('#clear-selection')
+ event('pointerdown',200,250,206,'pen');event('pointermove',220,270,206,'pen');event('pointerup',230,280,206,'pen');assert(Math.abs(position(0).x-190)<.01,'Hollow box interior could not be dragged')
+})
 await check('tablet landscape, tablet portrait, and narrow layouts fit without overflow',async()=>{
  for(const [width,height] of [[1376,1032],[1376,900],[1032,1376],[1032,1200],[1024,768],[768,1024],[390,844]]){
   frame.style.width=width+'px';frame.style.height=height+'px';await pause()
@@ -165,5 +193,9 @@ await check('tablet landscape, tablet portrait, and narrow layouts fit without o
 await check('standalone safe areas keep the title and Export clear of the status bar',async()=>{
  frame.style.width='1376px';frame.style.height='900px';d.documentElement.style.setProperty('--safe-top','32px');d.documentElement.style.setProperty('--safe-bottom','24px');await pause();w.scrollTo(0,0);await pause();assert(q('h1').getBoundingClientRect().top>=32,'Title overlaps status bar');assert(q('#export').getBoundingClientRect().top>=32,'Export overlaps status bar');d.documentElement.style.removeProperty('--safe-top');d.documentElement.style.removeProperty('--safe-bottom')
 })
+await check('a multi-object selection survives zooming and remains ready to move',async()=>{
+ await lasso([[140,180],[470,180],[470,370],[140,370],[140,180]],220);assert(q('#selection-count').textContent==='2 selected','Expected two objects');click('#zoom-in');click('#zoom-out');click('#fit');assert(q('#selection-count').textContent==='2 selected'&&q('[data-selection-drag]'),'Zoom lost group selection')
+})
+if(new URLSearchParams(location.search).has('preview')){document.head.insertAdjacentHTML('beforeend','<style>body{margin:0;overflow:hidden}body>h1,body>p,body>ol{display:none}iframe{border:0;width:100vw!important;height:100vh!important;display:block}</style>');await pause()}
 document.querySelector('#result').textContent=`${passed} passed, ${failed} failed`
 </script>

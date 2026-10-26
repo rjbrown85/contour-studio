@@ -1,4 +1,4 @@
-import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=6'
+import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape,lassoContains,selectionBounds} from './core.js?v=7'
 
 const $=s=>document.querySelector(s)
 const stage=$('#stage'), wrap=$('#stage-wrap'), art=$('#objects'), overlay=$('#overlay')
@@ -11,18 +11,21 @@ let prefs={theme:'dark',pencilOnly:false,autoPen:true,grid:false,gridSpacing:40,
 try{prefs={...prefs,...JSON.parse(localStorage.getItem(PREFS)||'{}')}}catch{}
 document.documentElement.dataset.theme=prefs.theme==='light'?'light':'dark'
 let history=new History(doc),selected=null,tool='draw',ink='#343630',width=4,filled=false,opacity=1
+let selectionIds=new Set(),forceLasso=false
 let penDetected=false,lastPenTime=-Infinity
 let autoFit=true,fillInk='#668374',paintTarget='stroke',wheelHSV=hexToHSV(ink),holdTimer,recognizedOriginal=null,editingLayer=null
 let camera={x:0,y:0,z:1},gesture=null,pointers=new Map(),pinch=null,waitForLift=false,raf=0,saveTimer,toastTimer,textTarget=null
-const hints={pencil:'Pencil keeps your hand-drawn line. Snap shapes can tidy it.',erase:'Drag over marks to erase whole objects. Locked artwork is protected.',curve:'Drag between endpoints. Select the curve to adjust its control points.',draw:'Draw freely. Use two fingers to move and zoom.',select:'Tap an object. Drag to move, use the corner to resize.',line:'Drag to draw a line.',rect:'Drag to draw a box.',ellipse:'Drag to draw an oval.',text:'Tap the canvas to add text.',hand:'Drag to move the canvas. Pinch to zoom.'}
+const hints={pencil:'Pencil keeps your hand-drawn line. Snap shapes can tidy it.',erase:'Drag over marks to erase whole objects. Locked artwork is protected.',curve:'Drag between endpoints. Select the curve to adjust its control points.',draw:'Draw freely. Use two fingers to move and zoom.',select:'Tap an object or circle several. Drag inside the selection to move.',line:'Drag to draw a line.',rect:'Drag to draw a box.',ellipse:'Drag to draw an oval.',text:'Tap the canvas to add text.',hand:'Drag to move the canvas. Pinch to zoom.'}
 const getSelected=()=>doc.objects.find(o=>o.id===selected)
+const getSelection=()=>doc.objects.filter(o=>selectionIds.has(o.id))
+function setSelection(ids){selectionIds=new Set(ids);selected=ids.length===1?ids[0]:null}
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,4200)}
 function preference(){try{localStorage.setItem(PREFS,JSON.stringify(prefs))}catch{}}
-function save(){clearTimeout(saveTimer);if(gesture?.kind==='draw'){saveTimer=setTimeout(save,200);return}try{localStorage.setItem(STORAGE,JSON.stringify(doc));$('#saved').textContent='Saved on this device'}catch{$('#saved').textContent='Not saved · use Save project';toast('Browser storage is full or unavailable. Save a project file to keep your work.')}}
+function save(){clearTimeout(saveTimer);if(gesture){saveTimer=setTimeout(save,200);return}try{localStorage.setItem(STORAGE,JSON.stringify(doc));$('#saved').textContent='Saved on this device'}catch{$('#saved').textContent='Not saved · use Save project';toast('Browser storage is full or unavailable. Save a project file to keep your work.')}}
 function commit(){if(history.commit(doc)){$('#saved').textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(save,200)}render()}
 function render(){
   if(gesture?.kind==='draw')materializeStroke(gesture)
-  if(selected&&!visibleObjects(doc).some(o=>o.id===selected))selected=null
+  const visibleIds=new Set(visibleObjects(doc).map(o=>o.id));setSelection(getSelection().filter(o=>visibleIds.has(o.id)).map(o=>o.id))
   art.innerHTML=visibleObjects(doc).map(o=>objectSVG(o,true)).join('')
   renderGrid();renderLayers()
 
@@ -32,7 +35,16 @@ function render(){
   $('#undo').disabled=!history.past.length;$('#redo').disabled=!history.future.length
   selectionOverlay()
 }
-function requestRender(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(gesture?.kind==='draw')renderDrawing(gesture);else render()})}
+function requestRender(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(gesture?.kind==='draw')renderDrawing(gesture);else if(gesture?.kind==='lasso')renderLasso(gesture);else if(gesture?.kind==='move')renderMoving();else render()})}
+function beginMove(e,p){
+  const items=getSelection(),box=selectionBounds(items)
+  gesture={kind:'move',pointer:e.pointerId,start:p,anchor:items.length===1?{x:items[0].x,y:items[0].y}:{x:box.left,y:box.top},originals:items.map(o=>({id:o.id,x:o.x,y:o.y})),before:{...doc,objects:doc.objects.map(o=>selectionIds.has(o.id)?{...o}:o)}}
+}
+function renderMoving(){
+  for(const o of getSelection())art.querySelector(`[data-object="${o.id}"]`)?.setAttribute('transform',`translate(${o.x} ${o.y}) rotate(${o.rotation})`)
+  selectionOverlay()
+}
+function renderLasso(g){overlay.innerHTML=`<path data-lasso="true" d="M${g.points.map(p=>`${p.x} ${p.y}`).join('L')}Z" fill="#5284ba" fill-opacity=".08" stroke="#5284ba" stroke-width="${1.5/camera.z}" stroke-dasharray="${6/camera.z}" pointer-events="none"/>`}
 function materializeStroke(g){
   if(!g.dirty||!['draw','pencil'].includes(g.tool))return
   const o=doc.objects.find(o=>o.id===g.object);if(!o)return
@@ -52,20 +64,30 @@ function renderDrawing(g){
   $('#empty').hidden=true
 }
 function selectionOverlay(){
-  const o=getSelected(),show=o&&tool==='select',canEdit=o&&editable(doc,o)
+  const items=getSelection(),o=getSelected(),multi=items.length>1,show=items.length>0&&tool==='select',canEdit=items.length>0&&items.every(o=>editable(doc,o))
+  $('#selection-mode').hidden=tool!=='select'
+  $('#new-lasso').setAttribute('aria-pressed',String(forceLasso))
   $('#selection-actions').hidden=!show
+  $('#selection-count').textContent=multi?`${items.length} selected`:''
   $('#edit-text').hidden=o?.type!=='text'
-  $('#lock-object').textContent=o?.locked?'Unlock':'Lock'
-  $('#lock-object').disabled=!!o&&layerFor(doc,o)?.locked
-  for(const id of ['edit-text','inspect-object','duplicate','delete'])$('#'+id).disabled=!canEdit
-
-  $('#backward').disabled=!canEdit||doc.objects.filter(item=>item.layerId===o?.layerId).indexOf(o)<=0
-  $('#forward').disabled=!canEdit||doc.objects.filter(item=>item.layerId===o?.layerId).at(-1)===o
+  $('#lock-object').textContent=items.length&&items.every(o=>o.locked)?'Unlock':'Lock'
+  $('#lock-object').disabled=items.some(o=>layerFor(doc,o)?.locked)
+  for(const id of ['duplicate','delete'])$('#'+id).disabled=!canEdit
+  for(const id of ['edit-text','inspect-object'])$('#'+id).disabled=!canEdit||multi
+  for(const id of ['color','colors','weight','fill','opacity'])$('#'+id).disabled=multi
+  for(const button of document.querySelectorAll('[data-color]'))button.disabled=multi
+  $('#backward').disabled=!canEdit||multi||doc.objects.filter(item=>item.layerId===o?.layerId).indexOf(o)<=0
+  $('#forward').disabled=!canEdit||multi||doc.objects.filter(item=>item.layerId===o?.layerId).at(-1)===o
   if(!show){overlay.innerHTML='';return}
+  if(multi){
+    const b=selectionBounds(items),pad=8/camera.z
+    overlay.innerHTML=items.map(item=>`<rect transform="translate(${item.x} ${item.y}) rotate(${item.rotation})" width="${item.w}" height="${item.h}" fill="none" stroke="#5284ba" stroke-opacity=".5" stroke-width="${1/camera.z}" pointer-events="none"/>`).join('')+`<rect data-selection-drag="true" x="${b.left-pad}" y="${b.top-pad}" width="${b.right-b.left+2*pad}" height="${b.bottom-b.top+2*pad}" rx="${4/camera.z}" fill="#5284ba" fill-opacity=".04" stroke="${canEdit?'#5284ba':'#8b8b83'}" stroke-dasharray="${6/camera.z}" stroke-width="${1.5/camera.z}"/>`
+    return
+  }
   if(!canEdit){overlay.innerHTML=`<rect transform="translate(${o.x} ${o.y}) rotate(${o.rotation})" width="${o.w}" height="${o.h}" fill="none" stroke="#8b8b83" stroke-dasharray="${5/camera.z}" stroke-width="${1.5/camera.z}" pointer-events="none"/>`;return}
-  const s=1/camera.z, r=8*s, handle=toWorld({x:o.w/2,y:-30*s},o)
+  const s=1/camera.z, r=10*s, handle=toWorld({x:o.w/2,y:-30*s},o)
   const corner=toWorld({x:o.w,y:o.h},o)
-  overlay.innerHTML=`<g transform="translate(${o.x} ${o.y}) rotate(${o.rotation})" fill="none" stroke="#5284ba" stroke-width="${1.3*s}"><rect width="${o.w}" height="${o.h}" pointer-events="none"/><path d="M${o.w/2} 0V${-30*s}" pointer-events="none"/></g><circle data-handle="rotate" cx="${handle.x}" cy="${handle.y}" r="${r*1.75}" fill="transparent"/><circle cx="${handle.x}" cy="${handle.y}" r="${r}" fill="white" stroke="#5284ba" stroke-width="${1.5*s}" pointer-events="none"/><circle data-handle="resize" cx="${corner.x}" cy="${corner.y}" r="${r*1.75}" fill="transparent"/><rect x="${corner.x-r}" y="${corner.y-r}" width="${r*2}" height="${r*2}" rx="${2*s}" fill="white" stroke="#5284ba" stroke-width="${1.5*s}" pointer-events="none"/>`
+  overlay.innerHTML=`<g transform="translate(${o.x} ${o.y}) rotate(${o.rotation})" fill="none" stroke="#5284ba" stroke-width="${1.3*s}"><rect data-selection-drag="true" x="${-4*s}" y="${-4*s}" width="${o.w+8*s}" height="${o.h+8*s}" fill="transparent"/><path d="M${o.w/2} 0V${-30*s}" pointer-events="none"/></g><circle data-handle="rotate" cx="${handle.x}" cy="${handle.y}" r="${r*2.2}" fill="transparent"/><circle cx="${handle.x}" cy="${handle.y}" r="${r}" fill="white" stroke="#5284ba" stroke-width="${1.5*s}" pointer-events="none"/><circle data-handle="resize" cx="${corner.x}" cy="${corner.y}" r="${r*2.2}" fill="transparent"/><rect x="${corner.x-r}" y="${corner.y-r}" width="${r*2}" height="${r*2}" rx="${2*s}" fill="white" stroke="#5284ba" stroke-width="${1.5*s}" pointer-events="none"/>`
   if(o.type==='curve')o.controls.forEach(([cx,cy],i)=>{
     const p=toWorld({x:cx*o.w,y:cy*o.h},o),a=toWorld({x:i?o.w:0,y:o.h/2},o)
     overlay.innerHTML+=`<path d="M${a.x} ${a.y}L${p.x} ${p.y}" stroke="#bd6b53" stroke-width="${s}" stroke-dasharray="${4*s}" pointer-events="none"/><circle data-handle="control-${i}" cx="${p.x}" cy="${p.y}" r="${16*s}" fill="transparent"/><circle cx="${p.x}" cy="${p.y}" r="${8*s}" fill="#fceda3" stroke="#bd6b53" stroke-width="${1.5*s}" pointer-events="none"/>`
@@ -93,7 +115,7 @@ function syncStyle(){
   $('#opacity').value=opacity*100;$('#opacity-value').textContent=`${Math.round(opacity*100)}%`
   for(const b of document.querySelectorAll('[data-color]'))b.setAttribute('aria-pressed',String(b.dataset.color===ink))
 }
-function setTool(next){cancelGesture();tool=next;if(next==='pencil')width=2;else if(next==='draw')width=4;stage.dataset.tool=tool;for(const b of document.querySelectorAll('[data-tool]'))b.setAttribute('aria-pressed',String(b.dataset.tool===tool));$('#hint').textContent=hints[tool];if(tool!=='select')selected=null;syncStyle();render()}
+function setTool(next){cancelGesture();forceLasso=false;tool=next;if(next==='pencil')width=2;else if(next==='draw')width=4;stage.dataset.tool=tool;for(const b of document.querySelectorAll('[data-tool]'))b.setAttribute('aria-pressed',String(b.dataset.tool===tool));$('#hint').textContent=hints[tool];if(tool!=='select')setSelection([]);syncStyle();render()}
 function setStyle(property,value,final=true){
   if(property==='ink')ink=value
   if(property==='width')width=value
@@ -110,13 +132,13 @@ function setStyle(property,value,final=true){
   syncStyle();if(final)commit();else render()
 }
 const style=()=>({fill:filled?fillInk:'none',stroke:ink,strokeWidth:width,opacity,layerId:doc.activeLayerId,locked:false})
-function choose(id){recognizedOriginal=null;$('#keep-original').hidden=true;selected=id;const o=getSelected();if(o)doc.activeLayerId=o.layerId;syncStyle();render()}
+function choose(id){recognizedOriginal=null;$('#keep-original').hidden=true;setSelection(id?[id]:[]);const o=getSelected();if(o)doc.activeLayerId=o.layerId;syncStyle();render()}
 function inside(p){return p.x>=0&&p.y>=0&&p.x<=doc.width&&p.y<=doc.height}
-function cancelGesture(){clearTimeout(holdTimer);if(gesture?.before)doc=gesture.before;gesture=null;pinch=null;render()}
+function cancelGesture(){clearTimeout(holdTimer);if(gesture?.beforeSelection)setSelection(gesture.beforeSelection);if(gesture?.before)doc=gesture.before;gesture=null;pinch=null;render()}
 function startPinch(){
   clearTimeout(holdTimer);autoFit=false
   if(gesture?.before)doc=gesture.before
-  gesture=null;selected=null
+  gesture=null;setSelection([])
   const pts=[...pointers.values()].filter(p=>p.type==='touch')
   if(pts.length<2)return
   const mid={x:(pts[0].x+pts[1].x)/2,y:(pts[0].y+pts[1].y)/2}
@@ -135,11 +157,16 @@ stage.addEventListener('pointerdown',e=>{
   let p=world(sp);const id=e.target.closest('[data-object]')?.dataset.object,handle=e.target.dataset.handle
   if(tool==='hand'||((prefs.pencilOnly||(prefs.autoPen&&penDetected))&&e.pointerType==='touch')){autoFit=false;gesture={kind:'pan',pointer:e.pointerId,screen:sp,camera:{...camera}};return}
   if(tool==='select'){
-    const o=getSelected()
-    if(handle&&o&&editable(doc,o)){gesture={kind:handle,pointer:e.pointerId,before:clone(doc),original:clone(o),start:p};return}
-    choose(id||null)
-    if(id&&editable(doc,getSelected())){gesture={kind:'move',pointer:e.pointerId,before:clone(doc),original:clone(getSelected()),start:p}}
-    return
+    const o=getSelected(),items=getSelection(),beforeSelection=[...selectionIds]
+    if(!forceLasso&&handle&&o&&editable(doc,o)){gesture={kind:handle,pointer:e.pointerId,before:clone(doc),original:clone(o),start:p};return}
+    const groupBox=items.length>1?selectionBounds(items):null
+    const inGroup=groupBox&&p.x>=groupBox.left-8/camera.z&&p.x<=groupBox.right+8/camera.z&&p.y>=groupBox.top-8/camera.z&&p.y<=groupBox.bottom+8/camera.z
+    const selectedHit=items.some(item=>{const q=toLocal(p,item);return q.x>=-6/camera.z&&q.x<=item.w+6/camera.z&&q.y>=-6/camera.z&&q.y<=item.h+6/camera.z})
+    const hit=forceLasso?null:visibleObjects(doc).reverse().find(item=>hitTest(['rect','ellipse'].includes(item.type)?{...item,fill:'#000000'}:item,p,10/camera.z))
+    if(!forceLasso&&(inGroup||selectedHit)&&items.every(item=>editable(doc,item))){beginMove(e,p);return}
+    if(hit&&!forceLasso){choose(hit.id);if(editable(doc,hit))beginMove(e,p);return}
+    setSelection([]);forceLasso=false;selectionOverlay()
+    gesture={kind:'lasso',pointer:e.pointerId,start:p,points:[p],beforeSelection};renderLasso(gesture);return
   }
   if(!inside(p))return
   if(tool==='erase'){gesture={kind:'erase',pointer:e.pointerId,before:clone(doc),last:p};eraseAt(p);return}
@@ -173,6 +200,16 @@ function movePointer(e){
   if(!gesture||gesture.pointer!==e.pointerId)return
   const g=gesture;let p=world(sp)
   if(g.kind==='pan'){camera.x=g.camera.x-(sp.x-g.screen.x)/camera.z;camera.y=g.camera.y-(sp.y-g.screen.y)/camera.z;updateCamera();return}
+  if(g.kind==='lasso'){
+    const last=g.points.at(-1);if(Math.hypot(p.x-last.x,p.y-last.y)>2/camera.z){if(g.points.length>=1000)g.points=g.points.filter((_,i)=>i%2===0);g.points.push(p)}requestRender();return
+  }
+  if(g.kind==='move'){
+    if(!getSelection().every(o=>editable(doc,o)))return
+    if(!g.moved&&Math.hypot(p.x-g.start.x,p.y-g.start.y)<2/camera.z)return
+    g.moved=true;const target=gridPoint({x:g.anchor.x+p.x-g.start.x,y:g.anchor.y+p.y-g.start.y}),dx=target.x-g.anchor.x,dy=target.y-g.anchor.y
+    for(const original of g.originals){const o=doc.objects.find(o=>o.id===original.id);if(o){o.x=original.x+dx;o.y=original.y+dy}}
+    requestRender();return
+  }
   if(g.kind==='erase'){
     const dist=Math.hypot(p.x-g.last.x,p.y-g.last.y),steps=Math.min(300,Math.ceil(dist/(8/camera.z)))
     for(let i=1;i<=steps;i++)eraseAt({x:g.last.x+(p.x-g.last.x)*i/steps,y:g.last.y+(p.y-g.last.y)*i/steps})
@@ -205,7 +242,6 @@ function movePointer(e){
     }
   }else{
     const o=getSelected();if(!o||!editable(doc,o))return
-    if(g.kind==='move'){const target=gridPoint({x:g.original.x+p.x-g.start.x,y:g.original.y+p.y-g.start.y});o.x=target.x;o.y=target.y}
     if(g.kind==='resize'){const local=toLocal(gridPoint(p),g.original);o.w=clamp(local.x,1,100000);o.h=clamp(local.y,1,100000);if(e.shiftKey||$('#constrain').checked){const s=Math.max(o.w/g.original.w,o.h/g.original.h);o.w=g.original.w*s;o.h=g.original.h*s}}
     if(g.kind.startsWith('control-')){const local=toLocal(gridPoint(p),o);o.controls[+g.kind.slice(-1)]=[local.x/o.w,local.y/o.h]}
     if(g.kind==='rotate'){const center=toWorld({x:g.original.w/2,y:g.original.h/2},g.original);let angle=Math.atan2(p.y-center.y,p.x-center.x)*180/Math.PI+90;if(e.shiftKey)angle=Math.round(angle/15)*15;Object.assign(o,rotateAroundCenter(g.original,angle))}
@@ -216,20 +252,22 @@ stage.addEventListener('pointermove',movePointer)
 function endPointer(e,cancel=false){
   if(!pointers.has(e.pointerId))return
   if(e.pointerType==='pen')lastPenTime=performance.now()
-  if(!cancel&&gesture?.pointer===e.pointerId&&gesture.kind==='draw'&&!gesture.recognized)movePointer(e)
+  if(!cancel&&e.type==='pointerup'&&gesture?.pointer===e.pointerId&&!gesture.recognized)movePointer(e)
   pointers.delete(e.pointerId)
   if(pinch){pinch=null;waitForLift=pointers.size>0;return}
   if(waitForLift){if(!pointers.size)waitForLift=false;return}
   if(!gesture||gesture.pointer!==e.pointerId)return
   const g=gesture;clearTimeout(holdTimer);if(!cancel)materializeStroke(g);gesture=null
   if(raf){cancelAnimationFrame(raf);raf=0}
-  if(cancel){if(g.before)doc=g.before;render();return}
+  if(cancel){if(g.before)doc=g.before;if(g.beforeSelection)setSelection(g.beforeSelection);render();return}
+  if(g.kind==='move'&&!g.moved){render();return}
+  if(g.kind==='lasso'){const box=g.points,area=Math.abs(box.reduce((sum,p,i)=>{const q=box[(i+1)%box.length];return sum+p.x*q.y-q.x*p.y},0))/2;if(box.length>=3&&area>36/(camera.z*camera.z)){setSelection(visibleObjects(doc).filter(o=>editable(doc,o)&&lassoContains(o,box)).map(o=>o.id))}syncStyle();render();return}
   if(g.kind==='draw'&&['draw','pencil'].includes(g.tool)&&prefs.snapShapes&&!g.recognized)tidyGesture(g)
   if(g.kind==='draw'&&!['draw','pencil'].includes(g.tool)){
     const o=doc.objects.find(o=>o.id===g.object)
     if(o&&Math.hypot(o.w,o.h)<4/camera.z){doc=g.before;render();return}
   }
-  if(g.kind==='draw'&&g.tool==='curve'){tool='select';selected=g.object;updateToolButtons();syncStyle()}
+  if(g.kind==='draw'&&g.tool==='curve'){tool='select';setSelection([g.object]);updateToolButtons();syncStyle()}
   if(g.kind!=='pan')commit();else render()
 }
 stage.addEventListener('pointerup',e=>endPointer(e))
@@ -254,16 +292,16 @@ $('#text-form').addEventListener('submit',e=>{
   const measure=document.createElement('canvas').getContext('2d');measure.font=`${italic?'italic ':''}${bold?'bold ':''}${h}px ${FONTS[font]}`
   const w=Math.max(15,measure.measureText(text).width+tracking*Math.max(0,text.length-1)),properties={text,w,h,font,bold,italic,tracking}
   if(textTarget.object){const o=doc.objects.find(o=>o.id===textTarget.object);if(o&&editable(doc,o))Object.assign(o,properties)}
-  else{const o={id:uid(),type:'text',x:textTarget.position.x,y:textTarget.position.y,rotation:0,...style(),fill:ink,stroke:'none',strokeWidth:0,...properties};doc.objects.push(o);selected=o.id;tool='select';updateToolButtons()}
+  else{const o={id:uid(),type:'text',x:textTarget.position.x,y:textTarget.position.y,rotation:0,...style(),fill:ink,stroke:'none',strokeWidth:0,...properties};doc.objects.push(o);setSelection([o.id]);tool='select';updateToolButtons()}
   $('#text-dialog').close();syncStyle();commit()
 })
 $('#cancel-text').onclick=()=>$('#text-dialog').close()
-function remove(){if(!getSelected()||!editable(doc,getSelected()))return;doc.objects=doc.objects.filter(o=>o.id!==selected);selected=null;commit()}
-function duplicate(){const o=getSelected();if(!o||!editable(doc,o))return;const copy={...clone(o),id:uid(),x:o.x+24,y:o.y+24};doc.objects.splice(doc.objects.indexOf(o)+1,0,copy);selected=copy.id;commit()}
+function remove(){const items=getSelection();if(!items.length||!items.every(o=>editable(doc,o)))return;doc.objects=doc.objects.filter(o=>!selectionIds.has(o.id));setSelection([]);commit()}
+function duplicate(){const items=getSelection();if(!items.length||!items.every(o=>editable(doc,o)))return;const copies=items.map(o=>({...clone(o),id:uid(),x:o.x+24,y:o.y+24}));doc.objects.push(...copies);setSelection(copies.map(o=>o.id));commit()}
 function reorder(delta){const o=getSelected();if(!o||!editable(doc,o))return;const same=doc.objects.filter(item=>item.layerId===o.layerId),target=same[same.indexOf(o)+delta];if(!target)return;const i=doc.objects.indexOf(o),j=doc.objects.indexOf(target);[doc.objects[i],doc.objects[j]]=[doc.objects[j],doc.objects[i]];commit()}
 
-function undo(){cancelGesture();recognizedOriginal=null;$('#keep-original').hidden=true;const oldSize=`${doc.width},${doc.height}`,previous=history.undo();if(previous){doc=previous;selected=null;save();render();if(oldSize!==`${doc.width},${doc.height}`)fit()}}
-function redo(){cancelGesture();recognizedOriginal=null;$('#keep-original').hidden=true;const oldSize=`${doc.width},${doc.height}`,next=history.redo();if(next){doc=next;selected=null;save();render();if(oldSize!==`${doc.width},${doc.height}`)fit()}}
+function undo(){cancelGesture();recognizedOriginal=null;$('#keep-original').hidden=true;const oldSize=`${doc.width},${doc.height}`,previous=history.undo();if(previous){doc=previous;setSelection([]);save();render();if(oldSize!==`${doc.width},${doc.height}`)fit()}}
+function redo(){cancelGesture();recognizedOriginal=null;$('#keep-original').hidden=true;const oldSize=`${doc.width},${doc.height}`,next=history.redo();if(next){doc=next;setSelection([]);save();render();if(oldSize!==`${doc.width},${doc.height}`)fit()}}
 for(const b of document.querySelectorAll('[data-tool]'))b.onclick=()=>setTool(b.dataset.tool)
 for(const b of document.querySelectorAll('[data-color]'))b.onclick=()=>setStyle('ink',b.dataset.color)
 $('#color').oninput=e=>setStyle('ink',e.target.value,false)
@@ -294,7 +332,7 @@ function applyName(){doc.name=$('#name').value.trim()||'Untitled';$('#name').val
 $('#name').onchange=applyName
 $('#project-dialog form').addEventListener('submit',applyName)
 $('#project-dialog').addEventListener('cancel',applyName)
-$('#new').onclick=()=>{cancelGesture();const [w,h]=$('#canvas-size').value.split(',').map(Number);doc={...blank(),width:w,height:h};selected=null;commit();fit();$('#project-dialog').close();toast('New canvas. Undo will restore your previous drawing.')}
+$('#new').onclick=()=>{cancelGesture();const [w,h]=$('#canvas-size').value.split(',').map(Number);doc={...blank(),width:w,height:h};setSelection([]);commit();fit();$('#project-dialog').close();toast('New canvas. Undo will restore your previous drawing.')}
 function filename(ext){return (doc.name||'Untitled').replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').slice(0,80)+ext}
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
 $('#save-project').onclick=()=>{if($('#project-dialog').open)applyName();download(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),filename('.contour.json'));toast('Project download started. Keep it in Files or iCloud Drive.')}
@@ -304,7 +342,7 @@ $('#file-input').onchange=async e=>{
   try{
     if(file.size>10*1024*1024)throw new Error('Choose a project smaller than 10 MB.')
     const incoming=validateProject(JSON.parse(await file.text()))
-    cancelGesture();doc=incoming;selected=null;commit();fit();$('#project-dialog').close();toast('Project opened. Undo restores your previous drawing.')
+    cancelGesture();doc=incoming;setSelection([]);commit();fit();$('#project-dialog').close();toast('Project opened. Undo restores your previous drawing.')
   }catch(err){toast(err instanceof SyntaxError?'This file is not a valid Contour project.':err.message)}
   e.target.value=''
 }
@@ -334,10 +372,10 @@ document.addEventListener('keydown',e=>{
   if(command&&e.key.toLowerCase()==='d'){e.preventDefault();duplicate();return}
   if(command&&e.key.toLowerCase()==='s'){e.preventDefault();$('#save-project').click();return}
   if(command)return
-  if(e.key==='Escape'){cancelGesture();selected=null;render();return}
+  if(e.key==='Escape'){cancelGesture();setSelection([]);render();return}
   if(e.key==='Delete'||e.key==='Backspace'){e.preventDefault();remove();return}
   const o=getSelected(),step=e.shiftKey?10:1
-  if(o&&editable(doc,o)&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();if(e.key==='ArrowLeft')o.x-=step;if(e.key==='ArrowRight')o.x+=step;if(e.key==='ArrowUp')o.y-=step;if(e.key==='ArrowDown')o.y+=step;commit();return}
+  if(getSelection().length&&getSelection().every(o=>editable(doc,o))&&['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)){e.preventDefault();for(const item of getSelection()){if(e.key==='ArrowLeft')item.x-=step;if(e.key==='ArrowRight')item.x+=step;if(e.key==='ArrowUp')item.y-=step;if(e.key==='ArrowDown')item.y+=step}commit();return}
   const shortcut={b:'draw',p:'pencil',e:'erase',c:'curve',v:'select',l:'line',r:'rect',o:'ellipse',t:'text',h:'hand'}[e.key.toLowerCase()]
   if(shortcut){e.preventDefault();setTool(shortcut)}
 })
@@ -356,7 +394,7 @@ function renderGrid(){
 function curveFromEndpoints(a,b,style){const angle=Math.atan2(b.y-a.y,b.x-a.x),w=Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),h=Math.max(40,w*.5);return {id:uid(),type:'curve',x:a.x+Math.sin(angle)*h/2,y:a.y-Math.cos(angle)*h/2,w,h,rotation:angle*180/Math.PI,...style,fill:'none',controls:prefs.curveStyle==='wave'?[[.25,-.4],[.75,1.4]]:[[.25,-.15],[.75,-.15]]}}
 function eraseAt(p){
   const o=visibleObjects(doc).reverse().find(o=>editable(doc,o)&&hitTest(o,p,8/camera.z))
-  if(o){doc.objects=doc.objects.filter(item=>item.id!==o.id);if(selected===o.id)selected=null;render()}
+  if(o){doc.objects=doc.objects.filter(item=>item.id!==o.id);if(selected===o.id)setSelection([]);render()}
 }
 function tidyGesture(g){
   materializeStroke(g)
@@ -400,6 +438,8 @@ function palette(){
   $('#common-colors').innerHTML=colors.map(button).join('');$('#brand-colors').innerHTML=doc.brandColors.map(hex=>button(['Brand',hex])).join('');$('#brand-empty').hidden=doc.brandColors.length>0
 }
 function initializeExtras(){
+  $('#new-lasso').onclick=()=>{cancelGesture();setSelection([]);forceLasso=true;render()}
+  $('#clear-selection').onclick=()=>{setSelection([]);forceLasso=false;render()}
   if(![20,40,80].includes(+prefs.gridSpacing))prefs.gridSpacing=40
   $('#grid-toggle').onclick=()=>{prefs.grid=!prefs.grid;syncExtras();preference();renderGrid()}
   $('#snap-shapes').onclick=()=>{prefs.snapShapes=!prefs.snapShapes;syncExtras();preference()}
@@ -410,11 +450,11 @@ function initializeExtras(){
   $('#curve-style').onchange=e=>{prefs.curveStyle=e.target.value;preference()}
   $('#keep-original').onclick=()=>{if(recognizedOriginal){const i=doc.objects.findIndex(o=>o.id===recognizedOriginal.id);if(i>=0&&editable(doc,doc.objects[i])){doc.objects[i]=recognizedOriginal.object;commit()}}recognizedOriginal=null;$('#keep-original').hidden=true}
   $('#layers-toggle').onclick=()=>toggleLayers();$('#close-layers').onclick=()=>toggleLayers(true)
-  $('#add-layer').onclick=()=>{if(doc.layers.length>=100){toast('This project has reached 100 layers.');return}const l={id:uid(),name:`Layer ${doc.layers.length+1}`,visible:true,locked:false};doc.layers.push(l);doc.activeLayerId=l.id;selected=null;commit()}
+  $('#add-layer').onclick=()=>{if(doc.layers.length>=100){toast('This project has reached 100 layers.');return}const l={id:uid(),name:`Layer ${doc.layers.length+1}`,visible:true,locked:false};doc.layers.push(l);doc.activeLayerId=l.id;setSelection([]);commit()}
   $('#layer-list').onclick=e=>{
     const b=e.target.closest('[data-layer]');if(!b)return;const l=doc.layers.find(l=>l.id===b.dataset.layer);if(!l)return
-    if(b.dataset.action==='select'){doc.activeLayerId=l.id;selected=null;commit()}
-    if(b.dataset.action==='visible'){l.visible=!l.visible;selected=null;commit()}
+    if(b.dataset.action==='select'){doc.activeLayerId=l.id;setSelection([]);commit()}
+    if(b.dataset.action==='visible'){l.visible=!l.visible;setSelection([]);commit()}
     if(b.dataset.action==='lock'){l.locked=!l.locked;commit()}
     if(b.dataset.action==='settings'){
       editingLayer=l.id;$('#layer-name').value=l.name;$('#layer-back').disabled=l.locked||doc.layers.indexOf(l)===0;$('#layer-front').disabled=l.locked||doc.layers.indexOf(l)===doc.layers.length-1;$('#delete-layer').disabled=doc.layers.length===1||l.locked||doc.objects.some(o=>o.layerId===l.id&&o.locked);showDialog('#layer-dialog')
@@ -424,8 +464,8 @@ function initializeExtras(){
   $('#layer-form').onsubmit=e=>{e.preventDefault();const l=doc.layers.find(l=>l.id===editingLayer);if(l)l.name=$('#layer-name').value.trim()||'Layer';commit();$('#layer-dialog').close()}
   const moveLayer=delta=>{const i=doc.layers.findIndex(l=>l.id===editingLayer),to=i+delta;if(i<0||to<0||to>=doc.layers.length||doc.layers[i].locked)return;const [l]=doc.layers.splice(i,1);doc.layers.splice(to,0,l);commit();$('#layer-dialog').close()}
   $('#layer-back').onclick=()=>moveLayer(-1);$('#layer-front').onclick=()=>moveLayer(1)
-  $('#delete-layer').onclick=()=>{const l=doc.layers.find(l=>l.id===editingLayer);if(!l||l.locked||doc.layers.length===1||doc.objects.some(o=>o.layerId===l.id&&o.locked))return;doc.objects=doc.objects.filter(o=>o.layerId!==l.id);doc.layers=doc.layers.filter(item=>item.id!==l.id);doc.activeLayerId=doc.layers.at(-1).id;selected=null;commit();$('#layer-dialog').close()}
-  $('#lock-object').onclick=()=>{const o=getSelected();if(!o||layerFor(doc,o)?.locked)return;o.locked=!o.locked;commit()}
+  $('#delete-layer').onclick=()=>{const l=doc.layers.find(l=>l.id===editingLayer);if(!l||l.locked||doc.layers.length===1||doc.objects.some(o=>o.layerId===l.id&&o.locked))return;doc.objects=doc.objects.filter(o=>o.layerId!==l.id);doc.layers=doc.layers.filter(item=>item.id!==l.id);doc.activeLayerId=doc.layers.at(-1).id;setSelection([]);commit();$('#layer-dialog').close()}
+  $('#lock-object').onclick=()=>{const items=getSelection();if(!items.length||items.some(o=>layerFor(doc,o)?.locked))return;const lock=!items.every(o=>o.locked);items.forEach(o=>o.locked=lock);commit()}
   $('#inspect-object').onclick=inspect
   $('#apply-object').onclick=()=>{
     const o=getSelected();if(!o||!editable(doc,o))return

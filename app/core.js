@@ -157,3 +157,48 @@ export function recognizeShape(points,style){
   }
   return type?{id:uid(),type,x,y,w,h,rotation:0,...style}:null
 }
+
+export function selectionPoints(o){
+  let points=[]
+  if(o.type==='path'){
+    const stride=Math.max(1,Math.ceil(o.points.length/256))
+    points=o.points.filter((_,i)=>i%stride===0||i===o.points.length-1).map(([x,y])=>({x:x*o.w,y:y*o.h}))
+  }else if(o.type==='line')points=[{x:0,y:o.flip?o.h:0},{x:o.w,y:o.flip?0:o.h}]
+  else if(o.type==='ellipse')points=Array.from({length:32},(_,i)=>({x:o.w/2*(1+Math.cos(i*Math.PI/16)),y:o.h/2*(1+Math.sin(i*Math.PI/16))}))
+  else if(o.type==='curve')points=Array.from({length:49},(_,i)=>{const t=i/48,u=1-t;return {x:3*u*u*t*o.controls[0][0]*o.w+3*u*t*t*o.controls[1][0]*o.w+t*t*t*o.w,y:u*u*u*o.h/2+3*u*u*t*o.controls[0][1]*o.h+3*u*t*t*o.controls[1][1]*o.h+t*t*t*o.h/2}})
+  else points=[{x:0,y:0},{x:o.w,y:0},{x:o.w,y:o.h},{x:0,y:o.h}]
+  return points.map(p=>toWorld(p,o))
+}
+export function pointInPolygon(p,polygon){
+  let inside=false
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++){
+    const a=polygon[j],b=polygon[i]
+    if(segmentDistance(p,a,b)<1e-6)return true
+    if((a.y>p.y)!==(b.y>p.y)&&p.x<(b.x-a.x)*(p.y-a.y)/(b.y-a.y)+a.x)inside=!inside
+  }
+  return inside
+}
+export function lassoContains(o,polygon){
+  if(polygon.length<3)return false
+  const points=selectionPoints(o)
+  if(!points.every(p=>pointInPolygon(p,polygon)))return false
+  const closed=['rect','ellipse','text'].includes(o.type),edges=closed?[...points,points[0]]:points
+  // Test between sampled vertices too, so a long line crossing a concavity is not selected.
+  for(let i=1;i<edges.length;i++){
+    const a=edges[i-1],b=edges[i],cuts=[0,1],dx=b.x-a.x,dy=b.y-a.y
+    for(let j=0;j<polygon.length;j++){
+      const c=polygon[j],d=polygon[(j+1)%polygon.length],ex=d.x-c.x,ey=d.y-c.y,den=dx*ey-dy*ex
+      if(Math.abs(den)<1e-9)continue
+      const t=((c.x-a.x)*ey-(c.y-a.y)*ex)/den,u=((c.x-a.x)*dy-(c.y-a.y)*dx)/den
+      if(t>0&&t<1&&u>=0&&u<=1)cuts.push(t)
+    }
+    cuts.sort((a,b)=>a-b)
+    for(let j=1;j<cuts.length;j++){const t=(cuts[j-1]+cuts[j])/2;if(!pointInPolygon({x:a.x+dx*t,y:a.y+dy*t},polygon))return false}
+  }
+  return true
+}
+export function selectionBounds(objects){
+  const boxes=objects.map(o=>{const p=selectionPoints(o),pad=o.stroke==='none'?0:o.strokeWidth/2;return {left:Math.min(...p.map(q=>q.x))-pad,right:Math.max(...p.map(q=>q.x))+pad,top:Math.min(...p.map(q=>q.y))-pad,bottom:Math.max(...p.map(q=>q.y))+pad}})
+  return {left:Math.min(...boxes.map(b=>b.left)),right:Math.max(...boxes.map(b=>b.right)),top:Math.min(...boxes.map(b=>b.top)),bottom:Math.max(...boxes.map(b=>b.bottom))}
+
+}

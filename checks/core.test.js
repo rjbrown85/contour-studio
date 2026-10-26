@@ -76,3 +76,17 @@ test('colour conversion preserves custom HEX and camera limits keep the page rea
 test('eraser distinguishes an empty shape interior from its edge after rotation',()=>{
  const o={...shape(),fill:'none',rotation:30};assert.equal(hitTest(o,toWorld({x:50,y:40},o),2),false);assert.equal(hitTest(o,toWorld({x:0,y:40},o),2),true)
 })
+
+test('lasso contains rotated objects and rejects objects crossing a concave boundary',async()=>{
+ const {lassoContains}=await import('../app/core.js')
+ const loop=[{x:-100,y:-100},{x:300,y:-100},{x:300,y:300},{x:-100,y:300}]
+ assert.equal(lassoContains({...shape(),rotation:40},loop),true)
+ assert.equal(lassoContains({...shape(),x:400},loop),false)
+ const concave=[{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:60,y:100},{x:60,y:40},{x:40,y:40},{x:40,y:100},{x:0,y:100}]
+ assert.equal(lassoContains({...shape(),type:'line',x:20,y:70,w:60,h:.01},concave),false)
+})
+test('selection bounds include curved artwork beyond its control box',async()=>{
+ const {selectionBounds}=await import('../app/core.js')
+ const box=selectionBounds([{...shape(),type:'curve',x:0,y:0,w:100,h:100,controls:[[.25,-2],[.75,-2]]}])
+ assert.ok(box.top<-100);assert.ok(box.left<=0&&box.right>=100)
+})

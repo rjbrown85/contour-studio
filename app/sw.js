@@ -1,5 +1,5 @@
-const CACHE='contour-studio-v6'
-const ASSETS=['./','./index.html','./style.css?v=6','./app.js?v=6','./core.js?v=6','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest']
+const CACHE='contour-studio-v7'
+const ASSETS=['./','./index.html','./style.css?v=7','./app.js?v=7','./core.js?v=7','./icon.svg','./icon-192.png','./icon-512.png','./manifest.webmanifest']
 self.addEventListener('install',event=>event.waitUntil(
   caches.open(CACHE).then(cache=>cache.addAll(ASSETS)).then(()=>self.skipWaiting())
 ))

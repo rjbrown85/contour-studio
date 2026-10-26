@@ -6,7 +6,7 @@ A small vector drawing app for iPad and desktop. A single canvas, warm dark colo
 
 ## Draw
 
-Choose Draw for smooth freehand paths, Pencil for a more direct hand-drawn line, or Line, Curve, Box, Oval, and Text. Draw with a finger, Apple Pencil, or mouse. Select an object to move, resize, rotate, duplicate, or lock it. Curve control points appear when you select a curve. Eraser removes whole vector objects, with undo available. It does not cut a path into pieces.
+Choose Draw for smooth freehand paths, Pencil for a more direct hand-drawn line, or Line, Curve, Box, Oval, and Text. Draw with a finger, Apple Pencil, or mouse. Select an object to move, resize, rotate, duplicate, or lock it. In Select, start on empty space and draw a loop to select several enclosed objects. Lift, then drag inside the blue box to move the selection together. New lasso allows a loop to start over existing artwork. Locked or hidden artwork is excluded. Duplicate, Delete, Lock and Undo apply to the selected group. Styling and size controls are available when one object is selected. Curve control points appear when you select a curve. Eraser removes whole vector objects, with undo available. It does not cut a path into pieces.
 
 **Colours** opens a colour wheel, brightness slider, common colours, HEX input, and a reusable project palette. Outline and fill can have different colours. Text supports five system font families, size, bold, italic, and letter spacing. **Size & align** offers exact dimensions, rounded box corners, page alignment, and moving an object to another layer.
 
@@ -27,7 +27,7 @@ The canvas includes landscape, portrait, square, wide, and 13-inch iPad-shaped p
 - **Drawing name → Save project** downloads a `.contour.json` file. Move it through Files, iCloud Drive, or another service, then use **Open project** in Contour Studio on the other device.
 - **Download PNG** creates a raster image at up to twice the canvas dimensions, capped at 4096 pixels on its longest side.
 
-Projects and SVGs serve different purposes. The app opens its own project files, not arbitrary SVG, PDF, or Illustrator files. It provides two control points for individual curves, but no general path-node editor, boolean operations, image tracing, or multi-object selection.
+Projects and SVGs serve different purposes. The app opens its own project files, not arbitrary SVG, PDF, or Illustrator files. It provides two control points for individual curves, but no general path-node editor, boolean operations, or image tracing.
 
 ## iPad
 
