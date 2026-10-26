@@ -1,4 +1,4 @@
-import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js'
+import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=4'
 
 const $=s=>document.querySelector(s)
 const stage=$('#stage'), wrap=$('#stage-wrap'), art=$('#objects'), overlay=$('#overlay')
@@ -432,4 +432,4 @@ function syncColorTarget(){$('#target-stroke').setAttribute('aria-pressed',Strin
 function syncExtras(){$('#grid-toggle').setAttribute('aria-pressed',String(!!prefs.grid));$('#snap-shapes').setAttribute('aria-pressed',String(!!prefs.snapShapes));$('#grid-visible').checked=!!prefs.grid;$('#grid-spacing').value=prefs.gridSpacing;$('#snap-grid').checked=!!prefs.snapGrid;$('#hold-shapes').checked=!!prefs.holdShapes;$('#curve-style').value=prefs.curveStyle}
 initializeExtras();render();syncStyle();fit()
 if(startupError)toast(startupError)
-if('serviceWorker'in navigator&&location.hostname!=='127.0.0.1'&&location.hostname!=='localhost')navigator.serviceWorker.register('./sw.js').catch(()=>{})
+if('serviceWorker'in navigator&&location.hostname!=='127.0.0.1'&&location.hostname!=='localhost')navigator.serviceWorker.register('./sw.js',{updateViaCache:'none'}).catch(()=>{})

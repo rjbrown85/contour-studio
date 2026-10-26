@@ -39,7 +39,7 @@ Browser checks cover simulated touch and pen events, tablet-sized layouts, and d
 
 No account, analytics, backend, or cloud sync. The current drawing is saved in this browser's local storage. Safari and Chrome have separate storage. Save a project file for a durable backup, especially before clearing browser data or using private browsing. The app reports storage failures rather than claiming a successful save.
 
-An offline cache stores the application files after the first successful online visit. It does not upload drawings. A new cached version takes over after all existing app tabs are closed. The service worker is disabled on localhost during development.
+An offline cache stores the application files after the first successful online visit. It does not upload drawings. Online visits check for the latest page. Versioned application files prevent stale code from hiding newly published tools. Updates activate without clearing drawings or forcing an open canvas to reload. The service worker is disabled on localhost during development.
 
 ## Develop
 
@@ -59,7 +59,7 @@ For integration checks, start the server and open `http://127.0.0.1:4173/checks/
 
 ## Publish
 
-In repository Settings → Pages, select **GitHub Actions** as the source. The included workflow runs the model checks, then publishes `app/` on pushes to `main`. It can also be run manually. Increment the cache version in `app/sw.js` whenever application assets change.
+In repository Settings → Pages, select **GitHub Actions** as the source. The included workflow runs the model checks, then publishes `app/` on pushes to `main`. It can also be run manually. Increment the cache version and the matching asset version in `app/sw.js`, `app/index.html`, and the `core.js` import in `app/app.js` whenever application assets change.
 
 ## References
 
