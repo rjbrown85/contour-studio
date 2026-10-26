@@ -122,6 +122,35 @@ await check('Pencil detection cancels an accidental finger mark and ignores near
 await check('a brief Pencil stroke includes its release position without a move event',async()=>{
  click('[data-tool="pencil"]');const before=count();event('pointerdown',200,300,46,'pen');event('pointerup',250,350,46,'pen');assert(count()===before+1,'Brief stroke missing');assert(q('#objects > g:last-child path').getAttribute('d').endsWith('50 50'),'Brief stroke endpoint missing')
 })
+await check('Pencil contact appears immediately and movement preserves existing artwork and controls',async()=>{
+ click('[data-tool="pencil"]');const existing=q('#objects > g'),layers=q('#layer-list').firstElementChild,grid=q('#grid').firstElementChild,before=count()
+ event('pointerdown',100,200,70,'pen');assert(count()===before+1,'Contact dot was delayed');assert(q('#objects > g:last-child path').getAttribute('d').startsWith('M0 0'),'Stroke start missing')
+ for(let i=1;i<=120;i++)event('pointermove',100+i*2,200+Math.sin(i/8)*25,70,'pen')
+ await new Promise(r=>w.requestAnimationFrame(()=>w.requestAnimationFrame(r)))
+ assert(q('#objects > g')===existing,'Existing artwork was rebuilt during movement');assert(q('#layer-list').firstElementChild===layers,'Layer controls rebuilt during movement');assert(q('#grid').firstElementChild===grid,'Grid rebuilt during movement')
+ assert(q('#objects > g:last-child path').getAttribute('d').length>40,'Live stroke not drawn');event('pointerup',350,200,70,'pen')
+})
+await check('coalesced Pencil samples retain the contact point, intermediate bend and newest position',async()=>{
+ click('[data-tool="pencil"]');event('pointerdown',100,300,71,'pen')
+ const move=new w.PointerEvent('pointermove',{...point(300,300),pointerId:71,pointerType:'pen',buttons:1,bubbles:true})
+ Object.defineProperty(move,'getCoalescedEvents',{value:()=>[new w.PointerEvent('pointermove',point(150,250)),new w.PointerEvent('pointermove',point(250,350))]});stage.dispatchEvent(move)
+ event('pointerup',350,300,71,'pen');const path=q('#objects > g:last-child path').getAttribute('d')
+ assert(path.startsWith('M0 50'),'Initial contact point missing');assert(path.includes('L50 0')&&path.includes('L150 100'),'Intermediate samples lost');assert(path.includes('L200 50')&&path.endsWith('L250 50'),'Latest move or release lost')
+})
+await check('rapid consecutive Pencil strokes remain separate and undo one at a time',async()=>{
+ click('[data-tool="pencil"]');const before=count()
+ for(let i=0;i<12;i++){event('pointerdown',100+i*12,600,80+i,'pen');event('pointerup',105+i*12,620,80+i,'pen')}
+ assert(count()===before+12,'Rapid strokes skipped or merged');click('#undo');assert(count()===before+11,'Undo did not remove exactly one stroke');click('#redo');assert(count()===before+12,'Redo lost the stroke')
+})
+await check('a pointer-capture failure does not discard the start of a Pencil stroke',async()=>{
+ click('[data-tool="pencil"]');const before=count(),capture=stage.setPointerCapture;stage.setPointerCapture=()=>{throw new w.DOMException('No active pointer','InvalidStateError')}
+ try{event('pointerdown',400,300,110,'pen');assert(count()===before+1,'Capture failure lost contact');event('pointerup',450,350,110,'pen',w);assert(q('#objects > g:last-child path').getAttribute('d').endsWith('50 50'),'Capture failure lost stroke')}finally{stage.setPointerCapture=capture}
+})
+await check('autosave waits for a complete stroke rather than saving a partial mark',async()=>{
+ await draw('pencil',400,200,420,220);const savedBefore=w.localStorage.getItem('contour-studio.document.v1.test')
+ event('pointerdown',500,300,111,'pen');event('pointermove',550,350,111,'pen');await new Promise(r=>setTimeout(r,300));assert(w.localStorage.getItem('contour-studio.document.v1.test')===savedBefore,'Saved a partial drawing')
+ event('pointerup',600,400,111,'pen');await new Promise(r=>setTimeout(r,250));const saved=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test'));assert(Math.abs(saved.objects.at(-1).w-100)<.001&&Math.abs(saved.objects.at(-1).h-100)<.001,'Completed stroke not saved')
+})
 await check('tablet landscape, tablet portrait, and narrow layouts fit without overflow',async()=>{
  for(const [width,height] of [[1376,1032],[1376,900],[1032,1376],[1032,1200],[1024,768],[768,1024],[390,844]]){
   frame.style.width=width+'px';frame.style.height=height+'px';await pause()

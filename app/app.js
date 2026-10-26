@@ -1,4 +1,4 @@
-import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=5'
+import {blank,clone,clamp,uid,toLocal,toWorld,rotateAroundCenter,fromPoints,objectSVG,exportSVG,validateProject,History,esc,FONTS,layerFor,editable,visibleObjects,bounds,snap,cameraRange,hexToHSV,hsvToHex,hitTest,recognizeShape} from './core.js?v=6'
 
 const $=s=>document.querySelector(s)
 const stage=$('#stage'), wrap=$('#stage-wrap'), art=$('#objects'), overlay=$('#overlay')
@@ -18,9 +18,10 @@ const hints={pencil:'Pencil keeps your hand-drawn line. Snap shapes can tidy it.
 const getSelected=()=>doc.objects.find(o=>o.id===selected)
 function toast(message){$('#toast').textContent=message;$('#toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('#toast').hidden=true,4200)}
 function preference(){try{localStorage.setItem(PREFS,JSON.stringify(prefs))}catch{}}
-function save(){clearTimeout(saveTimer);try{localStorage.setItem(STORAGE,JSON.stringify(doc));$('#saved').textContent='Saved on this device'}catch{$('#saved').textContent='Not saved · use Save project';toast('Browser storage is full or unavailable. Save a project file to keep your work.')}}
+function save(){clearTimeout(saveTimer);if(gesture?.kind==='draw'){saveTimer=setTimeout(save,200);return}try{localStorage.setItem(STORAGE,JSON.stringify(doc));$('#saved').textContent='Saved on this device'}catch{$('#saved').textContent='Not saved · use Save project';toast('Browser storage is full or unavailable. Save a project file to keep your work.')}}
 function commit(){if(history.commit(doc)){$('#saved').textContent='Saving…';clearTimeout(saveTimer);saveTimer=setTimeout(save,200)}render()}
 function render(){
+  if(gesture?.kind==='draw')materializeStroke(gesture)
   if(selected&&!visibleObjects(doc).some(o=>o.id===selected))selected=null
   art.innerHTML=visibleObjects(doc).map(o=>objectSVG(o,true)).join('')
   renderGrid();renderLayers()
@@ -31,7 +32,25 @@ function render(){
   $('#undo').disabled=!history.past.length;$('#redo').disabled=!history.future.length
   selectionOverlay()
 }
-function requestRender(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;render()})}
+function requestRender(){if(!raf)raf=requestAnimationFrame(()=>{raf=0;if(gesture?.kind==='draw')renderDrawing(gesture);else render()})}
+function materializeStroke(g){
+  if(!g.dirty||!['draw','pencil'].includes(g.tool))return
+  const o=doc.objects.find(o=>o.id===g.object);if(!o)return
+  Object.assign(o,fromPoints(g.points,g.style),{id:g.object});g.dirty=false
+}
+function renderDrawing(g){
+  materializeStroke(g)
+  const o=doc.objects.find(o=>o.id===g.object);if(!o)return
+  const current=art.querySelector(`[data-object="${o.id}"]`)
+  const template=document.createElementNS('http://www.w3.org/2000/svg','g');template.innerHTML=objectSVG(o)
+  const next=template.firstElementChild;next.setAttribute('data-object',o.id)
+  if(current)current.replaceWith(next)
+  else{
+    const ordered=visibleObjects(doc),after=ordered[ordered.findIndex(item=>item.id===o.id)+1]
+    art.insertBefore(next,after?art.querySelector(`[data-object="${after.id}"]`):null)
+  }
+  $('#empty').hidden=true
+}
 function selectionOverlay(){
   const o=getSelected(),show=o&&tool==='select',canEdit=o&&editable(doc,o)
   $('#selection-actions').hidden=!show
@@ -109,7 +128,7 @@ stage.addEventListener('pointerdown',e=>{
   if(e.pointerType==='touch'&&([...pointers.values()].some(p=>p.type==='pen')||performance.now()-lastPenTime<700))return
   if(e.pointerType==='pen'){lastPenTime=performance.now();if(!penDetected){penDetected=true;if(prefs.autoPen)toast('Pencil detected. Fingers now move the canvas. Change this in Drawing options.')}}
   e.preventDefault();stage.focus({preventScroll:true})
-  const sp=screen(e);pointers.set(e.pointerId,{...sp,type:e.pointerType});stage.setPointerCapture(e.pointerId)
+  const sp=screen(e);pointers.set(e.pointerId,{...sp,type:e.pointerType});try{stage.setPointerCapture(e.pointerId)}catch{}
   if(e.pointerType==='pen'&&[...pointers.values()].some(p=>p.type==='touch')){cancelGesture();for(const [id,p]of pointers)if(p.type==='touch')pointers.delete(id);waitForLift=false}
   if(e.pointerType==='touch'&&[...pointers.values()].filter(p=>p.type==='touch').length===2){startPinch();return}
   if(pinch||waitForLift||gesture)return
@@ -129,14 +148,15 @@ stage.addEventListener('pointerdown',e=>{
   if(!['draw','pencil'].includes(tool))p=gridPoint(p)
   recognizedOriginal=null;$('#keep-original').hidden=true
   if(tool==='text'){openText(p);return}
-  const before=clone(doc)
+  // Existing objects are untouched during creation, so a shallow snapshot is sufficient.
+  const before={...doc,objects:[...doc.objects]}
   let o
   if(['draw','pencil'].includes(tool))o=fromPoints([p],{...style(),smooth:tool!=='pencil'})
   else if(tool==='curve')o=curveFromEndpoints(p,{x:p.x+1,y:p.y},style())
   else o={id:uid(),type:tool,x:p.x,y:p.y,w:1,h:1,rotation:0,...style(),...(tool==='line'?{fill:'none'}:{})}
   doc.objects.push(o)
-  gesture={kind:'draw',pointer:e.pointerId,before,object:o.id,start:p,points:[p],tool}
-  render()
+  gesture={kind:'draw',pointer:e.pointerId,before,object:o.id,start:p,points:[p],tool,style:{...style(),smooth:tool!=='pencil'},dirty:false}
+  renderDrawing(gesture)
 })
 function movePointer(e){
   if(!pointers.has(e.pointerId))return
@@ -162,13 +182,19 @@ function movePointer(e){
     const o=doc.objects.find(o=>o.id===g.object)
     if(!o)return
     if(['draw','pencil'].includes(g.tool)){
-      const events=e.getCoalescedEvents?.()||[]
-      for(const sample of events.length?events:[e]){
-        const q=world(screen(sample)),last=g.points[g.points.length-1]
-        if(Math.hypot(q.x-last.x,q.y-last.y)>.5/camera.z&&g.points.length<12000)g.points.push(q)
+      let events=[]
+      try{events=e.getCoalescedEvents?.()||[]}catch{}
+      // Include the dispatch event too, since it can be newer than the coalesced samples.
+      const rect=stage.getBoundingClientRect()
+      for(const sample of [...events,e]){
+        const q=world({x:sample.clientX-rect.left,y:sample.clientY-rect.top}),last=g.points[g.points.length-1]
+        if(Math.hypot(q.x-last.x,q.y-last.y)>.2/camera.z){
+          // Keep long strokes responsive without freezing their tail at a fixed sample limit.
+          if(g.points.length>=12000)g.points=g.points.filter((_,i)=>i%2===0||i===g.points.length-1)
+          g.points.push(q);g.dirty=true
+        }
       }
-      if(g.recognized){g.recognized=false;recognizedOriginal=null;$('#keep-original').hidden=true}
-      const next=fromPoints(g.points,{...style(),smooth:g.tool!=='pencil'});Object.assign(o,next,{id:g.object})
+      if(g.recognized&&g.dirty){g.recognized=false;recognizedOriginal=null;$('#keep-original').hidden=true}
       clearTimeout(holdTimer)
       if(prefs.holdShapes&&g.points.length>3)holdTimer=setTimeout(()=>{if(gesture===g){tidyGesture(g);render()}},650)
     }else if(g.tool==='curve'){p=gridPoint(p);Object.assign(o,curveFromEndpoints(g.start,p,style()),{id:g.object})
@@ -195,7 +221,8 @@ function endPointer(e,cancel=false){
   if(pinch){pinch=null;waitForLift=pointers.size>0;return}
   if(waitForLift){if(!pointers.size)waitForLift=false;return}
   if(!gesture||gesture.pointer!==e.pointerId)return
-  const g=gesture;clearTimeout(holdTimer);gesture=null
+  const g=gesture;clearTimeout(holdTimer);if(!cancel)materializeStroke(g);gesture=null
+  if(raf){cancelAnimationFrame(raf);raf=0}
   if(cancel){if(g.before)doc=g.before;render();return}
   if(g.kind==='draw'&&['draw','pencil'].includes(g.tool)&&prefs.snapShapes&&!g.recognized)tidyGesture(g)
   if(g.kind==='draw'&&!['draw','pencil'].includes(g.tool)){
@@ -207,6 +234,9 @@ function endPointer(e,cancel=false){
 }
 stage.addEventListener('pointerup',e=>endPointer(e))
 stage.addEventListener('pointercancel',e=>endPointer(e,true))
+// A release outside the canvas must still finish a stroke if pointer capture was unavailable.
+window.addEventListener('pointerup',e=>endPointer(e))
+window.addEventListener('pointercancel',e=>endPointer(e,true))
 stage.addEventListener('lostpointercapture',e=>endPointer(e,true))
 stage.addEventListener('contextmenu',e=>e.preventDefault())
 stage.addEventListener('wheel',e=>{if(gesture){e.preventDefault();return}if(e.ctrlKey||e.metaKey){e.preventDefault();zoom(Math.exp(-e.deltaY*.008),screen(e))}else if(tool==='hand'){e.preventDefault();autoFit=false;camera.x+=e.deltaX/camera.z;camera.y+=e.deltaY/camera.z;updateCamera()}},{passive:false})
@@ -329,6 +359,7 @@ function eraseAt(p){
   if(o){doc.objects=doc.objects.filter(item=>item.id!==o.id);if(selected===o.id)selected=null;render()}
 }
 function tidyGesture(g){
+  materializeStroke(g)
   const index=doc.objects.findIndex(o=>o.id===g.object);if(index<0)return
   const original=clone(doc.objects[index]),shape=recognizeShape(g.points,style())
   if(!shape)return
