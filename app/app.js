@@ -206,11 +206,14 @@ $('#project').onclick=()=>{$('#name').value=doc.name;showDialog('#project-dialog
 $('#export').onclick=()=>showDialog('#export-dialog')
 $('#options').onclick=()=>showDialog('#options-dialog')
 $('#help').onclick=()=>showDialog('#help-dialog')
-$('#name').onchange=e=>{doc.name=e.target.value.trim()||'Untitled';e.target.value=doc.name;commit()}
+function applyName(){doc.name=$('#name').value.trim()||'Untitled';$('#name').value=doc.name;commit()}
+$('#name').onchange=applyName
+$('#project-dialog form').addEventListener('submit',applyName)
+$('#project-dialog').addEventListener('cancel',applyName)
 $('#new').onclick=()=>{cancelGesture();const [w,h]=$('#canvas-size').value.split(',').map(Number);doc={...blank(),width:w,height:h};selected=null;commit();fit();$('#project-dialog').close();toast('New canvas. Undo will restore your previous drawing.')}
 function filename(ext){return (doc.name||'Untitled').replace(/[<>:"/\\|?*\x00-\x1f]/g,'-').slice(0,80)+ext}
 function download(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
-$('#save-project').onclick=()=>{download(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),filename('.contour.json'));toast('Project download started. Keep it in Files or iCloud Drive.')}
+$('#save-project').onclick=()=>{if($('#project-dialog').open)applyName();download(new Blob([JSON.stringify(doc,null,2)],{type:'application/json'}),filename('.contour.json'));toast('Project download started. Keep it in Files or iCloud Drive.')}
 $('#open-project').onclick=()=>$('#file-input').click()
 $('#file-input').onchange=async e=>{
   const file=e.target.files?.[0];if(!file)return

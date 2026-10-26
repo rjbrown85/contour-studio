@@ -43,10 +43,21 @@ await check('text remains editable and safely renders literal markup',async()=>{
  assert(q('#objects text').textContent==='<label & text>','Text did not render literally');assert(!q('#objects label'),'Text became markup');click('#edit-text');q('#text-content').value='Hello';q('#text-form').requestSubmit();assert(q('#objects text').textContent==='Hello','Text edit failed')
 })
 await check('starting a new canvas is reversible',async()=>{const before=count();click('#project');click('#new');assert(count()===0,'New canvas not empty');click('#undo');assert(count()===before,'Undo did not restore previous drawing')})
-await check('local autosave restores the full project after reload',async()=>{
+await check('Save project uses the current name, and its downloaded file reopens',async()=>{
+ let savedBlob,savedName;const originalCreate=w.URL.createObjectURL,originalClick=w.HTMLAnchorElement.prototype.click
+ w.URL.createObjectURL=blob=>{savedBlob=blob;return originalCreate.call(w.URL,blob)}
+ w.HTMLAnchorElement.prototype.click=function(){savedName=this.download}
+ try{click('#project');q('#name').value='Round trip';click('#save-project')}finally{w.URL.createObjectURL=originalCreate;w.HTMLAnchorElement.prototype.click=originalClick}
+ assert(savedName==='Round trip.contour.json','Saved filename did not use the current name')
+ const contents=await savedBlob.text(),saved=JSON.parse(contents);assert(saved.name==='Round trip','Project name not saved');const before=count();click('#new');click('#project')
+ const transfer=new w.DataTransfer();transfer.items.add(new w.File([contents],savedName,{type:'application/json'}));q('#file-input').files=transfer.files;q('#file-input').dispatchEvent(new w.Event('change'));await pause()
+ assert(count()===before,'Import lost objects');assert(q('#project-name').textContent==='Round trip','Import lost project name')
+})
+await check('a fresh app session restores the full autosaved project',async()=>{
  const before=count();await new Promise(r=>setTimeout(r,250));assert(w.localStorage.getItem('contour-studio.document.v1.test'),'No saved project')
  document.querySelector('#result').textContent='Checking project restore…'
- await Promise.race([new Promise(r=>{frame.addEventListener('load',r,{once:true});frame.src='/?test&restore=1'}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Reload timed out')),5000))]);await pause();assert(frame.contentDocument.querySelector('#objects').children.length===before,'Reload lost objects')
+ const restored=document.createElement('iframe');restored.title='Autosave restore check';restored.style.display='none';restored.src='/?test&restore=1'
+ try{await Promise.race([new Promise(r=>{restored.addEventListener('load',r,{once:true});document.body.append(restored)}),new Promise((_,reject)=>setTimeout(()=>reject(new Error('Restore timed out')),10000))]);await pause();assert(restored.contentDocument.querySelector('#objects').children.length===before,'Restore lost objects')}finally{restored.remove()}
 })
 await check('SVG parses as XML and rasterizes to a PNG',async()=>{
  const {exportSVG}=await import('../core.js'),doc=JSON.parse(w.localStorage.getItem('contour-studio.document.v1.test')),svg=exportSVG(doc)
